@@ -8,7 +8,7 @@ import "./index.css";
 createRoot(document.getElementById("root")).render(
     <StrictMode>
         <SnackbarProvider maxSnack={3}>
-            <NavBar />
+            {/* <NavBar /> */}
             <App />
         </SnackbarProvider>
     </StrictMode>

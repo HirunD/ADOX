@@ -4,6 +4,8 @@ import AOS from "aos";
 import AboutPage from "./screens/AboutPage";
 import HomePage from "./screens/HomePage";
 import LoginPage from "./screens/LoginPage";
+import SignUpPage from "./screens/SignUp";
+import AdminPanel from "./screens/AdminPanel";
 
 const App = () => {
 
@@ -15,8 +17,9 @@ const App = () => {
         <BrowserRouter>
             <Routes>
                 <Route path="/" element={<HomePage />} />
-                <Route path="/about" element={<AboutPage />} />
+                <Route path="/signup" element={<SignUpPage />} />
                 <Route path="/login" element={<LoginPage />} />
+                <Route path="/admin" element={<AdminPanel />} />
             </Routes>
         </BrowserRouter>
     );
