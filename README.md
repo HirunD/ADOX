@@ -1,16 +1,35 @@
-# React + Vite
+# ADOX Portal 🚀
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A digital ID system built with React, Firebase, and Bulma CSS. This application allows users to register, generate a unique QR code containing their profile data, and provides an Admin Panel for scanning and verifying users.
 
-Currently, two official plugins are available:
+## ✨ Features
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- **User Authentication:** Secure Sign Up and Login using Firebase Auth.
+- **Digital ID Generation:** Automatically generates a QR code containing User UID and Profile details.
+- **Firestore Integration:** Stores extended profile data (Age, School, Phone Number).
+- **Admin Panel:** Password-protected area with a real-time QR scanner to fetch and display user data from the database.
+- **Responsive Design:** Built with Bulma CSS for a clean, mobile-friendly interface.
 
-## React Compiler
+---
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## 🛠️ Tech Stack
 
-## Expanding the ESLint configuration
+- **Frontend:** React (Vite)
+- **Styling:** Bulma CSS & FontAwesome Icons
+- **Database & Auth:** Firebase (Authentication & Cloud Firestore)
+- **QR Engine:** `react-qr-code` (Generation) & `qr-scanner` (Scanning)
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+---
+
+## 🚀 Getting Started
+
+### 1. Prerequisites
+- Node.js (v18 or higher)
+- A Firebase Project
+
+### 2. Installation
+Clone the repository and install dependencies:
+```bash
+git clone [https://github.com/your-username/adox-portal.git](https://github.com/your-username/adox-portal.git)
+cd adox-portal
+npm install
