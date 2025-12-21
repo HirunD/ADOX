@@ -1,5 +1,5 @@
 import React, {useEffect} from "react";
-import { BrowserRouter, Routes, Route } from "react-router";
+import { BrowserRouter, Routes, Route, Link } from "react-router";
 import AOS from "aos";
 import AboutPage from "./screens/AboutPage";
 import HomePage from "./screens/HomePage";

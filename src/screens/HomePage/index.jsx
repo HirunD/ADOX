@@ -3,6 +3,7 @@ import { auth, db } from "../../firebase";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import { doc, onSnapshot } from "firebase/firestore";
 import QRCode from "react-qr-code";
+import { Link } from "react-router";
 
 const HomePage = () => {
     const [user, setUser] = useState(null);
@@ -58,7 +59,7 @@ const HomePage = () => {
             <section className="section has-text-centered" style={backgroundStyle}>
                 <div className="box" style={{maxWidth: '400px', margin: 'auto', background: 'rgba(0,0,0,0.7)', color: 'white'}}>
                     <p className="subtitle has-text-white">Please log in to see your Pass.</p>
-                    <a href="/login" className="button is-primary">Go to Login</a>
+                    <Link to="/login" className="button is-primary">Go to Login</Link>
                 </div>
             </section>
         );
