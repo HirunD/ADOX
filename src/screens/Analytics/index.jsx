@@ -186,7 +186,7 @@ const AnalyticsPage = () => {
                                 <tbody>
                                     {getTopPlayers().map((p, i) => (
                                         <tr key={i} style={{ borderBottom: '1px solid #333' }}>
-                                            <td>{p.isLive ? <span className="tag is-success is-light">LIVE</span> : <span className="tag is-black">OFFLINE</span>}</td>
+                                            <td>{p.isLive ? <span className="tag is-success is-light">Playing</span> : <span className="tag is-black">OFFLINE</span>}</td>
                                             <td className="has-text-weight-bold">{p.name}</td>
                                             <td>{p.count}</td>
                                             <td>{p.totalHours}h</td>

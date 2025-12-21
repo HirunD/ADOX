@@ -8,6 +8,7 @@ import SignUpPage from "./screens/SignUp";
 import AdminPanel from "./screens/AdminPanel";
 import PlayerReport from "./screens/PlayerReport";
 import AnalyticsPage from "./screens/Analytics";
+import RevenueDashboard from "./screens/RevenueDashboard/RevenueDashboard";
 
 const App = () => {
 
@@ -24,6 +25,7 @@ const App = () => {
                 <Route path="/admin" element={<AdminPanel />} />
                 <Route path="/report/:uid" element={<PlayerReport />} />
                 <Route path="/admin/analytics" element={<AnalyticsPage />} />
+                <Route path="/revenue" element={<RevenueDashboard />} />
             </Routes>
         </BrowserRouter>
     );
