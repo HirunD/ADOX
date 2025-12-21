@@ -6,6 +6,8 @@ import HomePage from "./screens/HomePage";
 import LoginPage from "./screens/LoginPage";
 import SignUpPage from "./screens/SignUp";
 import AdminPanel from "./screens/AdminPanel";
+import PlayerReport from "./screens/PlayerReport";
+import AnalyticsPage from "./screens/Analytics";
 
 const App = () => {
 
@@ -20,6 +22,8 @@ const App = () => {
                 <Route path="/signup" element={<SignUpPage />} />
                 <Route path="/login" element={<LoginPage />} />
                 <Route path="/admin" element={<AdminPanel />} />
+                <Route path="/report/:uid" element={<PlayerReport />} />
+                <Route path="/admin/analytics" element={<AnalyticsPage />} />
             </Routes>
         </BrowserRouter>
     );

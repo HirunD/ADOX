@@ -1,0 +1,27 @@
+/* Glassmorphism NavBar */
+.navbar {
+    background: rgba(18, 18, 18, 0.7) !important; /* Semi-transparent dark */
+    backdrop-filter: blur(10px); /* Blur effect */
+    -webkit-backdrop-filter: blur(10px); /* Safari support */
+    /* border-bottom: 1px solid rgba(255, 255, 255, 0.1); */
+    transition:  0.3s ease;
+}
+
+/* Ensure the Burger menu also looks right on mobile */
+@media screen and (max-width: 1023px) {
+    .navbar-menu {
+        background: rgba(18, 18, 18, 0.9) !important;
+        backdrop-filter: blur(15px);
+    }
+}
+
+/* Adjust logo color to white for dark theme */
+.bd-svg-white {
+    fill: white !important;
+}
+
+/* Remove default Bulma background on navbar items */
+.navbar-item:focus, .navbar-item:hover {
+    background-color: rgba(255, 255, 255, 0.05) !important;
+    color: #00D1B2 !important;
+}
