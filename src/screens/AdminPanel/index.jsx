@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import QrScanner from "qr-scanner"; 
 import { db } from "../../firebase";
-import { doc, getDoc, updateDoc, arrayUnion } from "firebase/firestore";
+import { doc, getDoc, updateDoc, arrayUnion, collection, query, where, getDocs } from "firebase/firestore";
 
 const AdminPanel = () => {
     const [isAdmin, setIsAdmin] = useState(false);
@@ -11,15 +11,43 @@ const AdminPanel = () => {
     const [isLocked, setIsLocked] = useState(false);
     const [isUpdating, setIsUpdating] = useState(false);
     const [pendingTransaction, setPendingTransaction] = useState(null);
+    
+    // NEW: State for manual phone search
+    const [searchPhone, setSearchPhone] = useState("");
+    const [searchLoading, setSearchLoading] = useState(false);
 
     const videoRef = useRef(null);
     const scannerRef = useRef(null);
     const audioRef = useRef(new Audio("/success.mp3"));
 
-    // --- UPDATED PRICING (Rs.) ---
     const PRICING = { 0.5: 500, 1: 1000, 2: 1800 };
 
-    // --- LOGIC HELPERS ---
+    // --- NEW: MANUAL PHONE SEARCH LOGIC ---
+    const handlePhoneSearch = async (e) => {
+        e.preventDefault();
+        if (!searchPhone) return;
+        setSearchLoading(true);
+        try {
+            const usersRef = collection(db, "users");
+            const q = query(usersRef, where("phone", "==", searchPhone));
+            const querySnapshot = await getDocs(q);
+            
+            if (!querySnapshot.empty) {
+                const userDoc = querySnapshot.docs[0];
+                audioRef.current.play().catch(() => {});
+                setUserData({ ...userDoc.data(), uid: userDoc.id });
+                setSearchPhone(""); // Clear input on success
+            } else {
+                alert("No player found with that phone number.");
+            }
+        } catch (err) {
+            console.error("Search Error", err);
+        } finally {
+            setSearchLoading(false);
+        }
+    };
+
+    // --- EXISTING HELPERS ---
     const getTodaySessions = (sessions) => {
         if (!sessions) return [];
         const today = new Date().toISOString().split('T')[0];
@@ -30,32 +58,18 @@ const AdminPanel = () => {
         return getTodaySessions(sessions).reduce((acc, s) => acc + parseFloat(s.duration), 0);
     };
 
-    const getMonthlySessions = (sessions) => {
-        if (!sessions) return [];
-        const thirtyDaysAgo = new Date();
-        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-        return sessions
-            .filter(s => new Date(s.startTime) >= thirtyDaysAgo)
-            .sort((a, b) => new Date(b.startTime) - new Date(a.startTime));
-    };
-
     const handleScan = async (data) => {
         if (isLocked) return;
         try {
             const parsed = JSON.parse(data);
-            if (userData && userData.uid === parsed.uid && view === "scanner") return;
+            if (userData && userData.uid === parsed.uid) return;
             setIsLocked(true);
-            scannerRef.current?.stop();
             const userDoc = await getDoc(doc(db, "users", parsed.uid));
             if (userDoc.exists()) {
                 audioRef.current.play().catch(() => {});
                 setUserData({ ...userDoc.data(), uid: parsed.uid });
-                setView("scanner"); 
             }
-            setTimeout(() => {
-                setIsLocked(false);
-                if (view === "scanner") scannerRef.current?.start();
-            }, 1000);
+            setTimeout(() => setIsLocked(false), 2000);
         } catch (err) { console.error("QR Error", err); }
     };
 
@@ -71,10 +85,7 @@ const AdminPanel = () => {
                 method: method
             };
             await updateDoc(userRef, { sessions: arrayUnion(transaction) });
-            
-            // Set method for printing
             setPendingTransaction({...pendingTransaction, method});
-            
             setTimeout(() => {
                 window.print(); 
                 setPendingTransaction(null);
@@ -113,37 +124,9 @@ const AdminPanel = () => {
         );
     }
 
-    // --- VIEW: MONTHLY REPORT ---
-    if (view === "report" && userData) {
-        return (
-            <div className="section" style={{ background: '#050505', minHeight: '100vh' }}>
-                <div className="container" style={{maxWidth: '800px'}}>
-                    <button className="button is-dark mb-4" onClick={() => setView("scanner")}>← Back to Terminal</button>
-                    <div className="box" style={{ background: '#1a1a1a', color: 'white' }}>
-                        <h1 className="title has-text-white">30-Day Activity Log</h1>
-                        <h2 className="subtitle has-text-primary">{userData.fullName}</h2>
-                        <table className="table is-fullwidth is-dark" style={{background: 'transparent'}}>
-                            <thead><tr style={{color: '#00d1b2'}}><th>Date</th><th>Start Time</th><th>Duration</th></tr></thead>
-                            <tbody>
-                                {getMonthlySessions(userData.sessions).map((s, i) => (
-                                    <tr key={i}>
-                                        <td>{new Date(s.startTime).toLocaleDateString()}</td>
-                                        <td>{new Date(s.startTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</td>
-                                        <td>{s.duration} hr(s)</td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                        <button className="button is-primary is-fullwidth mt-4" onClick={() => window.print()}>Print Report</button>
-                    </div>
-                </div>
-            </div>
-        );
-    }
-
     return (
         <div className="section" style={{ background: '#050505', minHeight: '100vh' }}>
-            {/* PRINT-ONLY RECEIPT */}
+            {/* PRINT-ONLY RECEIPT (Hidden on screen) */}
             <div id="receipt" style={{ display: 'none' }}>
                 <center style={{fontFamily: 'monospace'}}>
                     <h2>ADOX GAMING CENTER</h2>
@@ -158,11 +141,33 @@ const AdminPanel = () => {
 
             <div className="container">
                 <div className="columns">
-                    {/* LEFT: SCANNER */}
+                    {/* LEFT: SCANNER & MANUAL SEARCH */}
                     <div className="column is-4">
                         <div className="box" style={{ background: '#1a1a1a', border: '1px solid #333' }}>
                             <h2 className="subtitle is-6 has-text-grey-light">Scanner {isLocked ? "•" : "○"}</h2>
-                            <video ref={videoRef} style={{ width: '100%', borderRadius: '8px', border: '1px solid #444' }}></video>
+                            <video ref={videoRef} style={{ width: '100%', borderRadius: '8px', border: '1px solid #444', marginBottom: '1rem' }}></video>
+                            
+                            <hr style={{ background: '#333' }} />
+                            
+                            {/* NEW: Manual Search UI */}
+                            <form onSubmit={handlePhoneSearch}>
+                                <label className="label is-small has-text-grey-light">Manual Lookup (Phone)</label>
+                                <div className="field has-addons">
+                                    <div className="control is-expanded">
+                                        <input 
+                                            className="input is-dark is-small" 
+                                            type="text" 
+                                            placeholder="Ex: 0771234567" 
+                                            value={searchPhone}
+                                            onChange={(e) => setSearchPhone(e.target.value)}
+                                            style={{ background: '#222', color: 'white' }}
+                                        />
+                                    </div>
+                                    <div className="control">
+                                        <button className={`button is-primary is-small ${searchLoading ? 'is-loading' : ''}`}>Find</button>
+                                    </div>
+                                </div>
+                            </form>
                         </div>
                     </div>
 
@@ -170,6 +175,7 @@ const AdminPanel = () => {
                     <div className="column is-8">
                         {userData ? (
                             <div className="box" style={{ background: '#1a1a1a', border: '1px solid #333', color: 'white' }}>
+                                {/* User Profile Header */}
                                 <div className="level is-mobile">
                                     <div className="level-left">
                                         <figure className="image is-48x48 mr-3">
@@ -198,6 +204,7 @@ const AdminPanel = () => {
 
                                 <hr style={{ background: '#333' }} />
 
+                                {/* Billing Buttons */}
                                 <label className="label has-text-grey-light">Purchase Session</label>
                                 <div className="buttons">
                                     <button className="button is-success is-outlined" onClick={() => setPendingTransaction({hours: 0.5, price: PRICING[0.5]})}>+30m (Rs.500)</button>
@@ -216,6 +223,7 @@ const AdminPanel = () => {
                                     </div>
                                 )}
 
+                                {/* Recent Activity */}
                                 <h3 className="subtitle is-6 mt-5 has-text-grey-light">Today's Session History</h3>
                                 <table className="table is-fullwidth is-dark" style={{ background: 'transparent' }}>
                                     <thead><tr style={{color: '#444'}}><th>Time</th><th>Duration</th><th>Method</th></tr></thead>
@@ -229,10 +237,12 @@ const AdminPanel = () => {
                                         ))}
                                     </tbody>
                                 </table>
+                                
+                                <button className="button is-danger is-small is-light mt-4" onClick={() => setUserData(null)}>Clear Current Player</button>
                             </div>
                         ) : (
                             <div className="notification has-text-centered has-text-grey" style={{ background: '#121212', border: '1px dashed #333' }}>
-                                Ready to Scan Player QR...
+                                Ready to Scan QR or Search Phone...
                             </div>
                         )}
                     </div>
