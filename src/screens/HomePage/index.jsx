@@ -1,9 +1,18 @@
 import React, { useState, useEffect } from "react";
 import { auth, db } from "../../firebase";
 import { onAuthStateChanged, signOut, updateProfile } from "firebase/auth";
-import { doc, onSnapshot, updateDoc, collection, query, where } from "firebase/firestore";
+import { doc, onSnapshot, updateDoc, collection } from "firebase/firestore";
 import QRCode from "react-qr-code";
 import { Link } from "react-router-dom";
+
+// Animation for the Leaderboard Sign
+const blinkStyle = `
+  @keyframes pulse-gold {
+    0% { box-shadow: 0 0 0 0 rgba(0, 209, 178, 0.4); transform: scale(1); }
+    70% { box-shadow: 0 0 0 10px rgba(0, 209, 178, 0); transform: scale(1.02); }
+    100% { box-shadow: 0 0 0 0 rgba(0, 209, 178, 0); transform: scale(1); }
+  }
+`;
 
 const HomePage = () => {
     const [user, setUser] = useState(null);
@@ -15,10 +24,9 @@ const HomePage = () => {
 
     const avatars = ["1.png", "2.png", "3.png", "4.png", "5.png", "6.png"];
 
-    // --- NEW: LOGIC TO CALCULATE ACTIVE USERS ---
+    // Logic to calculate active users
     useEffect(() => {
         const usersRef = collection(db, "users");
-        // We listen to all users to see who is currently playing
         const unsubscribe = onSnapshot(usersRef, (snapshot) => {
             let activeCount = 0;
             const now = new Date();
@@ -26,13 +34,11 @@ const HomePage = () => {
             snapshot.forEach((userDoc) => {
                 const data = userDoc.data();
                 if (data.sessions && data.sessions.length > 0) {
-                    // Get the very last session added
                     const lastSession = data.sessions[data.sessions.length - 1];
                     const startTime = new Date(lastSession.startTime);
                     const durationHours = parseFloat(lastSession.duration);
                     const endTime = new Date(startTime.getTime() + durationHours * 60 * 60 * 1000);
 
-                    // If current time is before the end of their session, they are occupying a machine
                     if (now < endTime) {
                         activeCount++;
                     }
@@ -80,9 +86,8 @@ const HomePage = () => {
     const containerStyle = { background: '#050505', minHeight: '100vh' };
     const cardStyle = { background: '#121212', border: '1px solid #222', borderRadius: '24px', color: 'white' };
     
-    // --- UI COMPONENTS ---
     const MachineStatus = () => (
-        <div className="box mb-5" style={{ background: '#1a1a1a', border: '1px solid #333', borderRadius: '20px' }}>
+        <div className="box mb-4" style={{ background: '#1a1a1a', border: '1px solid #333', borderRadius: '20px' }}>
             <div className="level is-mobile mb-0">
                 <div className="level-item has-text-centered">
                     <div>
@@ -90,15 +95,13 @@ const HomePage = () => {
                         <p className={`title is-3 ${occupiedMachines < TOTAL_MACHINES ? 'has-text-success' : 'has-text-danger'}`}>
                             {TOTAL_MACHINES - occupiedMachines} / {TOTAL_MACHINES}
                         </p>
-                        <p className="is-size-7 has-text-grey-light">Machines Available Now</p>
                     </div>
                 </div>
             </div>
-            {/* Visual machine dots */}
-            <div className="mt-3 is-flex is-justify-content-center">
+            <div className="mt-2 is-flex is-justify-content-center">
                 {[...Array(TOTAL_MACHINES)].map((_, i) => (
                     <div key={i} style={{
-                        width: '12px', height: '12px', borderRadius: '50%', margin: '0 5px',
+                        width: '10px', height: '10px', borderRadius: '50%', margin: '0 5px',
                         background: i < occupiedMachines ? '#ff3860' : '#00d1b2',
                         boxShadow: i < occupiedMachines ? '0 0 8px #ff3860' : '0 0 8px #00d1b2'
                     }}></div>
@@ -127,11 +130,42 @@ const HomePage = () => {
 
     return (
         <section className="section" style={containerStyle}>
+            <style>{blinkStyle}</style>
             <div className="container">
                 <div className="columns is-centered">
                     <div className="column is-4">
                         
                         <MachineStatus />
+
+                        {/* HALL OF FAME CALL TO ACTION */}
+                        <Link to="/leaderboard" style={{ textDecoration: 'none' }}>
+                            <div className="box mb-5" style={{ 
+                                background: 'linear-gradient(135deg, #00d1b2 0%, #008f7a 100%)', 
+                                borderRadius: '20px',
+                                border: 'none',
+                                animation: 'pulse-gold 2s infinite',
+                                padding: '15px'
+                            }}>
+                                <div className="level is-mobile mb-0">
+                                    <div className="level-left">
+                                        <div className="level-item">
+                                            <span className="icon is-medium has-text-white">
+                                                <i className="fas fa-trophy fa-lg"></i>
+                                            </span>
+                                        </div>
+                                        <div className="level-item">
+                                            <div>
+                                                <p className="title is-6 has-text-white mb-0">HALL OF FAME</p>
+                                                <p className="is-size-7 has-text-white has-text-weight-bold" style={{opacity: 0.9}}>BEAT THE FASTEST LAPS →</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="level-right">
+                                        <span className="tag is-white is-rounded has-text-weight-bold is-small">RANKINGS</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </Link>
 
                         {/* PROFILE HEADER */}
                         <div className="mb-6 has-text-centered">
@@ -150,7 +184,7 @@ const HomePage = () => {
                                 <div className="columns is-multiline is-mobile">
                                     {avatars.map((img) => (
                                         <div key={img} className="column is-4">
-                                            <img src={`/avatars/${img}`} className="is-rounded" style={{ cursor: 'pointer' }} onClick={() => changeAvatar(img)} />
+                                            <img src={`/avatars/${img}`} className="is-rounded" style={{ cursor: 'pointer', border: userData?.avatar === img ? '2px solid #00d1b2' : 'none' }} onClick={() => changeAvatar(img)} />
                                         </div>
                                     ))}
                                 </div>
@@ -166,13 +200,13 @@ const HomePage = () => {
                                             <span className="tag is-dark" style={{ background: '#252525', letterSpacing: '2px' }}>GAMER ID</span>
                                         </div>
                                         <div style={{ background: 'white', padding: '12px', display: 'inline-block', borderRadius: '12px' }}>
-                                            <QRCode value={JSON.stringify({ uid: user.uid })} size={200} level="H" />
+                                            <QRCode value={JSON.stringify({ uid: user.uid })} size={180} level="H" />
                                         </div>
                                         <div className="mt-5 has-text-left">
                                             <div className="columns is-mobile is-vcentered">
                                                 <div className="column">
                                                     <p className="is-size-7 has-text-grey">FULL NAME</p>
-                                                    <p className="is-size-6 has-text-weight-bold has-text-white">{userData?.fullName || "..."}</p>
+                                                    <p className="is-size-6 has-text-weight-bold has-text-white" style={{whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'}}>{userData?.fullName || "..."}</p>
                                                 </div>
                                                 <div className="column has-text-right">
                                                     <p className="is-size-7 has-text-grey">ID TAG</p>
