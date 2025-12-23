@@ -5,7 +5,6 @@ import { doc, onSnapshot, updateDoc, collection } from "firebase/firestore";
 import QRCode from "react-qr-code";
 import { Link } from "react-router-dom";
 
-// Animation for the Leaderboard Sign
 const blinkStyle = `
   @keyframes pulse-gold {
     0% { box-shadow: 0 0 0 0 rgba(0, 209, 178, 0.4); transform: scale(1); }
@@ -20,34 +19,53 @@ const HomePage = () => {
     const [points, setPoints] = useState(0);
     const [showSettings, setShowSettings] = useState(false);
     const [occupiedMachines, setOccupiedMachines] = useState(0);
+    const [todaySchedule, setTodaySchedule] = useState([]);
     const TOTAL_MACHINES = 3;
 
     const avatars = ["1.png", "2.png", "3.png", "4.png", "5.png", "6.png"];
 
-    // Logic to calculate active users
     useEffect(() => {
         const usersRef = collection(db, "users");
         const unsubscribe = onSnapshot(usersRef, (snapshot) => {
             let activeCount = 0;
+            const schedule = [];
             const now = new Date();
+            const startOfToday = new Date();
+            startOfToday.setHours(0, 0, 0, 0);
 
             snapshot.forEach((userDoc) => {
                 const data = userDoc.data();
-                if (data.sessions && data.sessions.length > 0) {
-                    const lastSession = data.sessions[data.sessions.length - 1];
-                    const startTime = new Date(lastSession.startTime);
-                    const durationHours = parseFloat(lastSession.duration);
-                    const endTime = new Date(startTime.getTime() + durationHours * 60 * 60 * 1000);
+                const userId = userDoc.id;
+                
+                if (data.sessions) {
+                    data.sessions.forEach(session => {
+                        const startTime = new Date(session.startTime);
+                        const endTime = new Date(startTime.getTime() + parseFloat(session.duration) * 60 * 60 * 1000);
+                        
+                        if (now >= startTime && now < endTime) {
+                            activeCount++;
+                        }
 
-                    if (now < endTime) {
-                        activeCount++;
-                    }
+                        // Add to schedule if session ends in the future and started today
+                        if (endTime > now && startTime >= startOfToday) {
+                            schedule.push({
+                                isMe: auth.currentUser?.uid === userId,
+                                start: startTime,
+                                end: endTime,
+                                active: now >= startTime && now < endTime
+                            });
+                        }
+                    });
                 }
             });
+
+            // Sort by start time
+            schedule.sort((a, b) => a.start - b.start);
+            setTodaySchedule(schedule);
             setOccupiedMachines(activeCount > TOTAL_MACHINES ? TOTAL_MACHINES : activeCount);
         });
         return () => unsubscribe();
-    }, []);
+    }, [user]);
 
     useEffect(() => {
         const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
@@ -166,6 +184,44 @@ const HomePage = () => {
                                 </div>
                             </div>
                         </Link>
+
+                        {/* ANONYMOUS SCHEDULE SECTION */}
+                        <div className="box mb-5" style={{ background: '#121212', border: '1px solid #222', borderRadius: '24px' }}>
+                            <p className="label has-text-grey is-size-7 mb-4 uppercase" style={{letterSpacing: '1px'}}>Track Itinerary</p>
+                            <div style={{ maxHeight: '200px', overflowY: 'auto', paddingRight: '5px' }}>
+                                {todaySchedule.length > 0 ? todaySchedule.map((item, idx) => (
+                                    <div key={idx} className="mb-2 p-3" style={{ 
+                                        background: item.active ? '#00d1b211' : '#1a1a1a', 
+                                        borderRadius: '12px',
+                                        borderLeft: item.active ? '4px solid #00d1b2' : '4px solid #333'
+                                    }}>
+                                        <div className="columns is-mobile is-vcentered">
+                                            <div className="column is-narrow">
+                                                <p className="is-size-7 has-text-white" style={{opacity: 0.8}}>
+                                                    {item.start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })}
+                                                </p>
+                                            </div>
+                                            <div className="column">
+                                                <p className="is-size-7 has-text-weight-bold">
+                                                    {item.isMe ? (
+                                                        <span className="has-text-primary">YOUR SESSION</span>
+                                                    ) : (
+                                                        <span className="has-text-grey">STATION OCCUPIED</span>
+                                                    )}
+                                                </p>
+                                            </div>
+                                            <div className="column is-narrow has-text-right">
+                                                <p className="is-size-7 has-text-grey-light">
+                                                    {item.active ? 'LIVE' : 'UPCOMING'}
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )) : (
+                                    <p className="has-text-centered has-text-grey is-size-7 py-4">No sessions scheduled</p>
+                                )}
+                            </div>
+                        </div>
 
                         {/* PROFILE HEADER */}
                         <div className="mb-6 has-text-centered">
