@@ -32,6 +32,9 @@ const HomePage = () => {
             const now = new Date();
             const startOfToday = new Date();
             startOfToday.setHours(0, 0, 0, 0);
+            
+            // 10-minute grace period (must match Admin Panel)
+            const SETUP_GRACE_PERIOD = 10 * 60 * 1000;
 
             snapshot.forEach((userDoc) => {
                 const data = userDoc.data();
@@ -40,18 +43,19 @@ const HomePage = () => {
                 if (data.sessions) {
                     data.sessions.forEach(session => {
                         const startTime = new Date(session.startTime);
-                        const endTime = new Date(startTime.getTime() + parseFloat(session.duration) * 60 * 60 * 1000);
+                        // Added grace period to the end time calculation
+                        const endTime = new Date(startTime.getTime() + (parseFloat(session.duration) * 60 * 60 * 1000) + SETUP_GRACE_PERIOD);
                         
                         if (now >= startTime && now < endTime) {
                             activeCount++;
                         }
 
-                        // Add to schedule if session ends in the future and started today
                         if (endTime > now && startTime >= startOfToday) {
                             schedule.push({
                                 isMe: auth.currentUser?.uid === userId,
                                 start: startTime,
                                 end: endTime,
+                                machine: session.machine || "N/A", // Pull machine data
                                 active: now >= startTime && now < endTime
                             });
                         }
@@ -59,7 +63,6 @@ const HomePage = () => {
                 }
             });
 
-            // Sort by start time
             schedule.sort((a, b) => a.start - b.start);
             setTodaySchedule(schedule);
             setOccupiedMachines(activeCount > TOTAL_MACHINES ? TOTAL_MACHINES : activeCount);
@@ -155,22 +158,14 @@ const HomePage = () => {
                         
                         <MachineStatus />
 
-                        {/* HALL OF FAME CALL TO ACTION */}
                         <Link to="/leaderboard" style={{ textDecoration: 'none' }}>
                             <div className="box mb-5" style={{ 
                                 background: 'linear-gradient(135deg, #00d1b2 0%, #008f7a 100%)', 
-                                borderRadius: '20px',
-                                border: 'none',
-                                animation: 'pulse-gold 2s infinite',
-                                padding: '15px'
+                                borderRadius: '20px', animation: 'pulse-gold 2s infinite', padding: '15px'
                             }}>
                                 <div className="level is-mobile mb-0">
                                     <div className="level-left">
-                                        <div className="level-item">
-                                            <span className="icon is-medium has-text-white">
-                                                <i className="fas fa-trophy fa-lg"></i>
-                                            </span>
-                                        </div>
+                                        <div className="level-item"><span className="icon is-medium has-text-white"><i className="fas fa-trophy fa-lg"></i></span></div>
                                         <div className="level-item">
                                             <div>
                                                 <p className="title is-6 has-text-white mb-0">HALL OF FAME</p>
@@ -178,43 +173,38 @@ const HomePage = () => {
                                             </div>
                                         </div>
                                     </div>
-                                    <div className="level-right">
-                                        <span className="tag is-white is-rounded has-text-weight-bold is-small">RANKINGS</span>
-                                    </div>
+                                    <div className="level-right"><span className="tag is-white is-rounded has-text-weight-bold is-small">RANKINGS</span></div>
                                 </div>
                             </div>
                         </Link>
 
-                        {/* ANONYMOUS SCHEDULE SECTION */}
+                        {/* --- UPDATED SCHEDULE TABLE --- */}
                         <div className="box mb-5" style={{ background: '#121212', border: '1px solid #222', borderRadius: '24px' }}>
                             <p className="label has-text-grey is-size-7 mb-4 uppercase" style={{letterSpacing: '1px'}}>Track Itinerary</p>
-                            <div style={{ maxHeight: '200px', overflowY: 'auto', paddingRight: '5px' }}>
+                            <div style={{ maxHeight: '250px', overflowY: 'auto', paddingRight: '5px' }}>
                                 {todaySchedule.length > 0 ? todaySchedule.map((item, idx) => (
                                     <div key={idx} className="mb-2 p-3" style={{ 
                                         background: item.active ? '#00d1b211' : '#1a1a1a', 
                                         borderRadius: '12px',
                                         borderLeft: item.active ? '4px solid #00d1b2' : '4px solid #333'
                                     }}>
-                                        <div className="columns is-mobile is-vcentered">
-                                            <div className="column is-narrow">
-                                                <p className="is-size-7 has-text-white" style={{opacity: 0.8}}>
-                                                    {item.start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })}
-                                                </p>
-                                            </div>
-                                            <div className="column">
-                                                <p className="is-size-7 has-text-weight-bold">
-                                                    {item.isMe ? (
-                                                        <span className="has-text-primary">YOUR SESSION</span>
-                                                    ) : (
-                                                        <span className="has-text-grey">STATION OCCUPIED</span>
-                                                    )}
-                                                </p>
-                                            </div>
-                                            <div className="column is-narrow has-text-right">
-                                                <p className="is-size-7 has-text-grey-light">
-                                                    {item.active ? 'LIVE' : 'UPCOMING'}
-                                                </p>
-                                            </div>
+                                        <div className="is-flex is-justify-content-between is-align-items-center mb-1">
+                                            <p className="is-size-7 has-text-white" style={{opacity: 0.8}}>
+                                                {item.start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} 
+                                                <span className="mx-2">→</span>
+                                                {item.end.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                            </p>
+                                            <span className={`tag is-small ${item.machine === "1" ? 'is-warning' : 'is-dark'}`} style={{fontSize: '0.65rem'}}>
+                                                {item.machine === "1" ? "SIM RIG" : `PC #${item.machine}`}
+                                            </span>
+                                        </div>
+                                        <div className="is-flex is-justify-content-between">
+                                            <p className="is-size-7 has-text-weight-bold">
+                                                {item.isMe ? <span className="has-text-primary">YOUR SESSION</span> : <span className="has-text-grey">STATION OCCUPIED</span>}
+                                            </p>
+                                            <p className={`is-size-7 ${item.active ? 'has-text-success' : 'has-text-grey-light'}`}>
+                                                {item.active ? '● LIVE' : 'UPCOMING'}
+                                            </p>
                                         </div>
                                     </div>
                                 )) : (
@@ -240,7 +230,7 @@ const HomePage = () => {
                                 <div className="columns is-multiline is-mobile">
                                     {avatars.map((img) => (
                                         <div key={img} className="column is-4">
-                                            <img src={`/avatars/${img}`} className="is-rounded" style={{ cursor: 'pointer', border: userData?.avatar === img ? '2px solid #00d1b2' : 'none' }} onClick={() => changeAvatar(img)} />
+                                            <img src={`/avatars/${img}`} className="is-rounded" style={{ cursor: 'pointer', border: userData?.avatar === img ? '2px solid #00d1b2' : 'none' }} onClick={() => changeAvatar(img)} alt="avatar option" />
                                         </div>
                                     ))}
                                 </div>
