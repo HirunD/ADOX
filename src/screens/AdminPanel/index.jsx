@@ -1,263 +1,353 @@
 import React, { useState, useEffect, useRef } from "react";
-import QrScanner from "qr-scanner"; 
+import QrScanner from "qr-scanner";
 import { db } from "../../firebase";
-import { doc, getDoc, updateDoc, arrayUnion, collection, query, where, getDocs } from "firebase/firestore";
+import {
+  doc,
+  getDoc,
+  updateDoc,
+  arrayUnion,
+  collection,
+  query,
+  where,
+  getDocs,
+  onSnapshot,
+} from "firebase/firestore";
+
+const isCurrentlyPeakTime = () => {
+  const now = new Date();
+  const currentTotalMinutes = now.getHours() * 60 + now.getMinutes();
+  const peakStart = 13 * 60 + 30; 
+  const peakEnd = 15 * 60 + 0; 
+  return currentTotalMinutes >= peakStart && currentTotalMinutes < peakEnd;
+};
 
 const AdminPanel = () => {
-    const [isAdmin, setIsAdmin] = useState(false);
-    const [password, setPassword] = useState("");
-    const [userData, setUserData] = useState(null);
-    const [view, setView] = useState("scanner"); 
-    const [isLocked, setIsLocked] = useState(false);
-    const [isUpdating, setIsUpdating] = useState(false);
-    const [pendingTransaction, setPendingTransaction] = useState(null);
-    
-    // NEW: State for manual phone search
-    const [searchPhone, setSearchPhone] = useState("");
-    const [searchLoading, setSearchLoading] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [password, setPassword] = useState("");
+  const [userData, setUserData] = useState(null);
+  const [isLocked, setIsLocked] = useState(false); // Scan lock
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [pendingTransaction, setPendingTransaction] = useState(null);
 
-    const videoRef = useRef(null);
-    const scannerRef = useRef(null);
-    const audioRef = useRef(new Audio("/success.mp3"));
+  const [pricingConfig, setPricingConfig] = useState(null);
+  const [selectedMachine, setSelectedMachine] = useState("");
+  const [couponCode, setCouponCode] = useState("");
+  const [appliedCoupon, setAppliedCoupon] = useState(null);
+  const [couponError, setCouponError] = useState("");
 
-    const PRICING = { 0.5: 500, 1: 1000, 2: 1800 };
+  const [activeSessions, setActiveSessions] = useState([]);
+  const [occupiedCount, setOccupiedCount] = useState(0);
+  const [manualOverride, setManualOverride] = useState(false); // CAPACITY OVERRIDE
+  
+  const MACHINES = ["Sim", "PC1", "PC2"];
+  const TOTAL_CAPACITY = MACHINES.length;
 
-    // --- NEW: MANUAL PHONE SEARCH LOGIC ---
-    const handlePhoneSearch = async (e) => {
-        e.preventDefault();
-        if (!searchPhone) return;
-        setSearchLoading(true);
-        try {
-            const usersRef = collection(db, "users");
-            const q = query(usersRef, where("phone", "==", searchPhone));
-            const querySnapshot = await getDocs(q);
-            
-            if (!querySnapshot.empty) {
-                const userDoc = querySnapshot.docs[0];
-                audioRef.current.play().catch(() => {});
-                setUserData({ ...userDoc.data(), uid: userDoc.id });
-                setSearchPhone(""); // Clear input on success
-            } else {
-                alert("No player found with that phone number.");
-            }
-        } catch (err) {
-            console.error("Search Error", err);
-        } finally {
-            setSearchLoading(false);
+  const [searchPhone, setSearchPhone] = useState("");
+  const [searchLoading, setSearchLoading] = useState(false);
+
+  const videoRef = useRef(null);
+  const scannerRef = useRef(null);
+  const audioRef = useRef(new Audio("/success.mp3"));
+
+  // --- 1. DATA LISTENERS ---
+  useEffect(() => {
+    const unsub = onSnapshot(doc(db, "settings", "pricing"), (docSnap) => {
+      if (docSnap.exists()) {
+        const rawData = docSnap.data();
+        if (rawData.pricing && rawData.pricing.standard) {
+          setPricingConfig(rawData.pricing);
+        } else {
+          setPricingConfig(rawData);
         }
-    };
+      }
+    });
+    return () => unsub();
+  }, []);
 
-    // --- EXISTING HELPERS ---
-    const getTodaySessions = (sessions) => {
-        if (!sessions) return [];
-        const today = new Date().toISOString().split('T')[0];
-        return sessions.filter(s => s.startTime.startsWith(today));
-    };
-
-    const getTodayTotal = (sessions) => {
-        return getTodaySessions(sessions).reduce((acc, s) => acc + parseFloat(s.duration), 0);
-    };
-
-    const handleScan = async (data) => {
-        if (isLocked) return;
-        try {
-            const parsed = JSON.parse(data);
-            if (userData && userData.uid === parsed.uid) return;
-            setIsLocked(true);
-            const userDoc = await getDoc(doc(db, "users", parsed.uid));
-            if (userDoc.exists()) {
-                audioRef.current.play().catch(() => {});
-                setUserData({ ...userDoc.data(), uid: parsed.uid });
+  useEffect(() => {
+    const unsubscribe = onSnapshot(collection(db, "users"), (snapshot) => {
+      const now = new Date();
+      const active = [];
+      snapshot.forEach((userDoc) => {
+        const data = userDoc.data();
+        if (data.sessions) {
+          data.sessions.forEach((s) => {
+            const start = new Date(s.startTime);
+            const end = new Date(start.getTime() + parseFloat(s.duration) * 3600000 + 600000);
+            if (now >= start && now < end) {
+              active.push({ name: data.fullName, machine: s.machine, endTime: end, timeLeft: Math.round((end - now) / 60000) });
             }
-            setTimeout(() => setIsLocked(false), 2000);
-        } catch (err) { console.error("QR Error", err); }
-    };
-
-    const confirmAndPrint = async (method) => {
-        if (!userData || !pendingTransaction) return;
-        setIsUpdating(true);
-        try {
-            const userRef = doc(db, "users", userData.uid);
-            const transaction = { 
-                startTime: new Date().toISOString(), 
-                duration: pendingTransaction.hours,
-                amountPaid: pendingTransaction.price,
-                method: method
-            };
-            await updateDoc(userRef, { sessions: arrayUnion(transaction) });
-            setPendingTransaction({...pendingTransaction, method});
-            setTimeout(() => {
-                window.print(); 
-                setPendingTransaction(null);
-                refreshUserData();
-            }, 100);
-        } catch (err) { console.error(err); }
-        finally { setIsUpdating(false); }
-    };
-
-    const refreshUserData = async () => {
-        const userRef = doc(db, "users", userData.uid);
-        const updated = await getDoc(userRef);
-        setUserData({ ...updated.data(), uid: userData.uid });
-    };
-
-    useEffect(() => {
-        if (isAdmin && view === "scanner" && videoRef.current) {
-            scannerRef.current = new QrScanner(videoRef.current, (result) => handleScan(result.data), { highlightScanRegion: true });
-            scannerRef.current.start();
+          });
         }
-        return () => scannerRef.current?.destroy();
-    }, [isAdmin, view]);
+      });
+      setActiveSessions(active.sort((a, b) => a.endTime - b.endTime));
+      setOccupiedCount(active.length);
+    });
+    return () => unsubscribe();
+  }, []);
 
-    if (!isAdmin) {
-        return (
-            <div className="section" style={{ background: '#050505', minHeight: '100vh' }}>
-                <form className="box" style={{maxWidth: '400px', margin: '100px auto', background: '#1a1a1a', border: '1px solid #333'}} onSubmit={(e) => {
-                    e.preventDefault();
-                    if (password === import.meta.env.VITE_ADMIN_PASSWORD) setIsAdmin(true);
-                }}>
-                    <h1 className="title has-text-white">Admin Login</h1>
-                    <input className="input is-dark mb-3" type="password" placeholder="Access Key" onChange={(e) => setPassword(e.target.value)} />
-                    <button className="button is-primary is-fullwidth">Login</button>
-                </form>
-            </div>
-        );
+  // --- 2. CAMERA LOGIC ---
+  const handleScan = async (result) => {
+    if (isLocked || !result) return;
+    try {
+      const data = JSON.parse(result.data);
+      if (data.uid) {
+        setIsLocked(true);
+        const userDoc = await getDoc(doc(db, "users", data.uid));
+        if (userDoc.exists()) {
+          audioRef.current.play().catch(() => {});
+          setUserData({ ...userDoc.data(), uid: data.uid });
+        }
+        setTimeout(() => setIsLocked(false), 3000);
+      }
+    } catch (e) { console.error("Scan Error:", e); }
+  };
+
+  useEffect(() => {
+    if (isAdmin && videoRef.current) {
+      scannerRef.current = new QrScanner(
+        videoRef.current,
+        (result) => handleScan(result),
+        { highlightScanRegion: true, highlightCodeOutline: true }
+      );
+      scannerRef.current.start().catch((err) => console.error(err));
     }
+    return () => {
+      if (scannerRef.current) {
+        scannerRef.current.stop();
+        scannerRef.current.destroy();
+      }
+    };
+  }, [isAdmin]);
 
+  // --- 3. PRICING & HANDLERS ---
+  const getRate = (h) => {
+    if (!pricingConfig) return 0;
+    const val = pricingConfig[h] || pricingConfig[String(h)];
+    return val ? Number(val) : 0;
+  };
+
+  const calculateFinalTotal = () => {
+    if (!pendingTransaction) return 0;
+    const base = Number(pendingTransaction.price);
+    if (appliedCoupon && appliedCoupon.discount) {
+      const reduction = (base * Number(appliedCoupon.discount)) / 100;
+      return base - reduction;
+    }
+    return base;
+  };
+
+  const applyCoupon = async () => {
+    if (!couponCode) return;
+    setCouponError("");
+    try {
+      const couponRef = doc(db, "coupons", couponCode.toUpperCase().trim());
+      const couponSnap = await getDoc(couponRef);
+      if (couponSnap.exists()) {
+        const data = couponSnap.data();
+        if (data.isActive) { setAppliedCoupon(data); } 
+        else { setCouponError("Disabled"); setAppliedCoupon(null); }
+      } else { setCouponError("Invalid"); setAppliedCoupon(null); }
+    } catch (err) { setCouponError("Error"); }
+  };
+
+  const handlePhoneSearch = async (e) => {
+    if (e) e.preventDefault();
+    setSearchLoading(true);
+    try {
+      const q = query(collection(db, "users"), where("phone", "==", searchPhone));
+      const snap = await getDocs(q);
+      if (!snap.empty) {
+        setUserData({ ...snap.docs[0].data(), uid: snap.docs[0].id });
+        setSearchPhone("");
+      } else { alert("User not found"); }
+    } catch (err) { console.error(err); } finally { setSearchLoading(false); }
+  };
+
+  const confirmPayment = async (method) => {
+    if (!userData || !pendingTransaction || !selectedMachine) return alert("Select Station & Time!");
+    setIsUpdating(true);
+    try {
+      await updateDoc(doc(db, "users", userData.uid), {
+        sessions: arrayUnion({
+          startTime: new Date().toISOString(),
+          duration: pendingTransaction.hours,
+          amountPaid: calculateFinalTotal(),
+          method: method,
+          machine: selectedMachine,
+        }),
+      });
+      setTimeout(() => window.print(), 500);
+      setUserData(null);
+      setPendingTransaction(null);
+      setAppliedCoupon(null);
+      setCouponCode("");
+      setSelectedMachine("");
+    } catch (e) { alert("Failed!"); } finally { setIsUpdating(false); }
+  };
+
+  if (!isAdmin) {
     return (
-        <div className="section" style={{ background: '#050505', minHeight: '100vh' }}>
-            {/* PRINT-ONLY RECEIPT (Hidden on screen) */}
-            <div id="receipt" style={{ display: 'none' }}>
-                <center style={{fontFamily: 'monospace'}}>
-                    <h2>ADOX GAMING CENTER</h2>
-                    <p>PLAYER: {userData?.fullName}</p>
-                    <p>TIME: {pendingTransaction?.hours} hour(s)</p>
-                    <p>PRICE: Rs.{pendingTransaction?.price}</p>
-                    <p>METHOD: {pendingTransaction?.method}</p>
-                    <p>DATE: {new Date().toLocaleString()}</p>
-                    <p>THANK YOU!</p>
-                </center>
-            </div>
-
-            <div className="container">
-                <div className="columns">
-                    {/* LEFT: SCANNER & MANUAL SEARCH */}
-                    <div className="column is-4">
-                        <div className="box" style={{ background: '#1a1a1a', border: '1px solid #333' }}>
-                            <h2 className="subtitle is-6 has-text-grey-light">Scanner {isLocked ? "•" : "○"}</h2>
-                            <video ref={videoRef} style={{ width: '100%', borderRadius: '8px', border: '1px solid #444', marginBottom: '1rem' }}></video>
-                            
-                            <hr style={{ background: '#333' }} />
-                            
-                            {/* NEW: Manual Search UI */}
-                            <form onSubmit={handlePhoneSearch}>
-                                <label className="label is-small has-text-grey-light">Manual Lookup (Phone)</label>
-                                <div className="field has-addons">
-                                    <div className="control is-expanded">
-                                        <input 
-                                            className="input is-dark is-small" 
-                                            type="text" 
-                                            placeholder="Ex: 0771234567" 
-                                            value={searchPhone}
-                                            onChange={(e) => setSearchPhone(e.target.value)}
-                                            style={{ background: '#222', color: 'white' }}
-                                        />
-                                    </div>
-                                    <div className="control">
-                                        <button className={`button is-primary is-small ${searchLoading ? 'is-loading' : ''}`}>Find</button>
-                                    </div>
-                                </div>
-                            </form>
-                        </div>
-                    </div>
-
-                    {/* RIGHT: USER DASHBOARD */}
-                    <div className="column is-8">
-                        {userData ? (
-                            <div className="box" style={{ background: '#1a1a1a', border: '1px solid #333', color: 'white' }}>
-                                {/* User Profile Header */}
-                                <div className="level is-mobile">
-                                    <div className="level-left">
-                                        <figure className="image is-48x48 mr-3">
-                                            <img className="is-rounded" src={`/avatars/${userData.avatar || '1.png'}`} style={{border: '2px solid #00d1b2'}} />
-                                        </figure>
-                                        <div>
-                                            <h1 className="title is-4 has-text-white mb-0">{userData.fullName}</h1>
-                                            <button className="button is-ghost is-small p-0 has-text-primary" onClick={() => setView("report")}>📊 View Full Report</button>
-                                        </div>
-                                    </div>
-                                    <div className="level-right has-text-right">
-                                        <p className="heading has-text-grey">Total Today</p>
-                                        <p className="title is-3 has-text-success">{getTodayTotal(userData.sessions)}h</p>
-                                    </div>
-                                </div>
-
-                                <div className="columns is-mobile mt-2">
-                                    <div className="column is-6">
-                                        <p className="is-size-7 has-text-grey">AGE: <span className="has-text-white">{userData.age}</span></p>
-                                        <p className="is-size-7 has-text-grey">SCHOOL: <span className="has-text-white">{userData.school || "N/A"}</span></p>
-                                    </div>
-                                    <div className="column is-6 has-text-right">
-                                        <p className="is-size-7 has-text-grey">PHONE: <span className="has-text-white">{userData.phone || "N/A"}</span></p>
-                                    </div>
-                                </div>
-
-                                <hr style={{ background: '#333' }} />
-
-                                {/* Billing Buttons */}
-                                <label className="label has-text-grey-light">Purchase Session</label>
-                                <div className="buttons">
-                                    <button className="button is-success is-outlined" onClick={() => setPendingTransaction({hours: 0.5, price: PRICING[0.5]})}>+30m (Rs.500)</button>
-                                    <button className="button is-info is-outlined" onClick={() => setPendingTransaction({hours: 1, price: PRICING[1]})}>+1h (Rs.1000)</button>
-                                    <button className="button is-primary is-outlined" onClick={() => setPendingTransaction({hours: 2, price: PRICING[2]})}>+2h (Rs.1800)</button>
-                                </div>
-
-                                {pendingTransaction && (
-                                    <div className="notification mt-4" style={{ background: '#00d1b211', border: '1px solid #00d1b2' }}>
-                                        <p className="is-size-5 has-text-white mb-3">Pay <strong>Rs. {pendingTransaction.price}</strong>?</p>
-                                        <div className="buttons">
-                                            <button className="button is-success" onClick={() => confirmAndPrint("CASH")}>💵 Cash</button>
-                                            <button className="button is-info" onClick={() => confirmAndPrint("CARD")}>💳 Card</button>
-                                            <button className="button is-dark" onClick={() => setPendingTransaction(null)}>Cancel</button>
-                                        </div>
-                                    </div>
-                                )}
-
-                                {/* Recent Activity */}
-                                <h3 className="subtitle is-6 mt-5 has-text-grey-light">Today's Session History</h3>
-                                <table className="table is-fullwidth is-dark" style={{ background: 'transparent' }}>
-                                    <thead><tr style={{color: '#444'}}><th>Time</th><th>Duration</th><th>Method</th></tr></thead>
-                                    <tbody className="is-size-7">
-                                        {getTodaySessions(userData.sessions).map((s, i) => (
-                                            <tr key={i}>
-                                                <td>{new Date(s.startTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</td>
-                                                <td>{s.duration} hr(s)</td>
-                                                <td className="has-text-primary">{s.method || "CASH"}</td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                                
-                                <button className="button is-danger is-small is-light mt-4" onClick={() => setUserData(null)}>Clear Current Player</button>
-                            </div>
-                        ) : (
-                            <div className="notification has-text-centered has-text-grey" style={{ background: '#121212', border: '1px dashed #333' }}>
-                                Ready to Scan QR or Search Phone...
-                            </div>
-                        )}
-                    </div>
-                </div>
-            </div>
-
-            <style>{`
-                @media print {
-                    body * { visibility: hidden; }
-                    #receipt, #receipt * { visibility: visible; }
-                    #receipt { position: absolute; left: 0; top: 0; width: 100%; display: block !important; }
-                }
-            `}</style>
-        </div>
+      <div className="section" style={{ background: "#050505", minHeight: "100vh" }}>
+        <form className="box" style={{ maxWidth: "400px", margin: "100px auto", background: "#1a1a1a", border: "1px solid #333" }}
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (password === import.meta.env.VITE_ADMIN_PASSWORD) setIsAdmin(true);
+          }}>
+          <h1 className="title has-text-white">Admin Login</h1>
+          <input className="input is-dark mb-3" type="password" placeholder="Access Key" onChange={(e) => setPassword(e.target.value)} />
+          <button className="button is-primary is-fullwidth">Login</button>
+        </form>
+      </div>
     );
+  }
+
+  // --- Logic for Capacity Check ---
+  const isFull = occupiedCount >= TOTAL_CAPACITY && !manualOverride;
+
+  return (
+    <div className="section" style={{ background: "#050505", minHeight: "100vh" }}>
+      
+      {/* THERMAL RECEIPT */}
+      <div id="receipt-print" style={{ display: "none" }}>
+        <div style={{ width: "80mm", padding: "5mm", fontFamily: "monospace", color: "black" }}>
+          <center>
+            <h2 style={{ margin: "0" }}>ADOX GAMING</h2>
+            <hr style={{ border: "0.5px dashed black" }} />
+          </center>
+          <div style={{ fontSize: "14px" }}>
+            <p>Date: {new Date().toLocaleDateString()}</p>
+            <p>Player: {userData?.fullName}</p>
+            <p>Station: {selectedMachine}</p>
+            <p>Duration: {pendingTransaction?.hours}h</p>
+            <hr style={{ border: "0.5px dashed black" }} />
+            <h3 style={{ textAlign: "right" }}>Total: Rs. {calculateFinalTotal()}</h3>
+          </div>
+        </div>
+      </div>
+
+      <div className="container">
+        <div className="columns">
+          {/* LEFT: MONITOR */}
+          <div className="column is-4">
+            <div className="box" style={{ background: "#1a1a1a", border: "1px solid #333" }}>
+              <div className="is-flex is-justify-content-space-between mb-3">
+                <h3 className="subtitle is-6 has-text-white mb-0">Active ({occupiedCount}/{TOTAL_CAPACITY})</h3>
+                <button 
+                  className={`button is-extremely-small ${manualOverride ? 'is-danger' : 'is-dark'}`}
+                  onClick={() => setManualOverride(!manualOverride)}
+                  style={{ fontSize: '0.6rem', padding: '0 5px' }}
+                >
+                  {manualOverride ? 'OVERRIDE ON' : 'MANUAL'}
+                </button>
+              </div>
+              
+              {activeSessions.length === 0 ? (
+                <p className="has-text-grey is-size-7">No active players</p>
+              ) : (
+                activeSessions.map((s, i) => (
+                  <div key={i} className="mb-2 p-2" style={{ background: "#222", borderLeft: "4px solid #00d1b2" }}>
+                    <p className="is-size-7 has-text-white">{s.name} - <b>{s.machine}</b></p>
+                    <p className="is-size-7 has-text-warning">{s.timeLeft}m left</p>
+                  </div>
+                ))
+              )}
+            </div>
+            <div style={{ position: "relative", overflow: "hidden", borderRadius: "8px", border: "2px solid #333" }}>
+              <video ref={videoRef} style={{ width: "100%", display: "block", background: "#000" }}></video>
+            </div>
+          </div>
+
+          {/* RIGHT: BILLING */}
+          <div className="column is-8">
+            <div className="box mb-4" style={{ background: "#1a1a1a", border: "1px solid #333" }}>
+              <form onSubmit={handlePhoneSearch} className="field has-addons">
+                <div className="control is-expanded"><input className="input is-dark" type="text" placeholder="Phone Search..." value={searchPhone} onChange={(e) => setSearchPhone(e.target.value)} /></div>
+                <div className="control"><button type="submit" className={`button is-primary ${searchLoading ? 'is-loading' : ''}`}>Search</button></div>
+              </form>
+            </div>
+
+            {userData && (
+              <div className="box" style={{ background: "#1a1a1a", color: "white", border: "1px solid #333" }}>
+                <div className="columns">
+                  <div className="column is-4">
+                    <label className="label is-small has-text-primary">1. STATION</label>
+                    <div className="buttons">
+                      {MACHINES.map((m) => (
+                        <button 
+                          key={m} 
+                          className={`button is-small is-fullwidth ${selectedMachine === m ? "is-primary" : "is-dark"}`} 
+                          onClick={() => setSelectedMachine(m)}
+                          disabled={activeSessions.some(s => s.machine === m) && !manualOverride}
+                        >
+                          {m} {activeSessions.some(s => s.machine === m) ? "(Busy)" : ""}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="column is-4">
+                    <label className="label is-small has-text-info">2. TIME</label>
+                    <div className="buttons">
+                      {[0.5, 1, 2].map((h) => {
+                        const rate = getRate(h);
+                        return (
+                          <button key={h} className={`button is-small is-fullwidth ${pendingTransaction?.hours === h ? 'is-info' : 'is-dark'}`} onClick={() => setPendingTransaction({ hours: h, price: rate })}>
+                            {h === 0.5 ? "30m" : h + "h"} - Rs.{rate}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="column is-4">
+                    <label className="label is-small has-text-danger">3. COUPON</label>
+                    <div className="field has-addons">
+                      <div className="control is-expanded"><input className="input is-small is-dark" type="text" value={couponCode} onChange={(e) => setCouponCode(e.target.value)} /></div>
+                      <div className="control"><button className="button is-danger is-small" onClick={applyCoupon}>Apply</button></div>
+                    </div>
+                    {appliedCoupon && <p className="help is-success">{appliedCoupon.discount}% Off Applied!</p>}
+                  </div>
+                </div>
+
+                {pendingTransaction && (
+                  <div className="notification mt-4 is-dark" style={{ border: isFull ? "2px solid #ff3860" : "2px solid #00d1b2" }}>
+                    {isFull ? (
+                      <div className="has-text-centered">
+                        <p className="has-text-danger mb-2"><b>STORE AT FULL CAPACITY</b></p>
+                        <p className="is-size-7">Use 'Manual' toggle to override</p>
+                      </div>
+                    ) : (
+                      <>
+                        <p className="is-size-3"><strong>Final: Rs. {calculateFinalTotal()}</strong></p>
+                        <div className="buttons mt-2">
+                          <button className={`button is-success is-fullwidth ${isUpdating ? 'is-loading' : ''}`} onClick={() => confirmPayment("CASH")}>Pay Cash</button>
+                          <button className={`button is-info is-fullwidth ${isUpdating ? 'is-loading' : ''}`} onClick={() => confirmPayment("CARD")}>Pay Card</button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <style>{`
+        @media print {
+          body * { visibility: hidden; }
+          #receipt-print, #receipt-print * { visibility: visible; display: block !important; }
+          #receipt-print { position: absolute; left: 0; top: 0; width: 100%; }
+        }
+        .is-extremely-small {
+          height: 20px;
+          padding: 0 8px;
+          font-size: 10px;
+        }
+      `}</style>
+    </div>
+  );
 };
 
 export default AdminPanel;

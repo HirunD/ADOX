@@ -1,9 +1,17 @@
 import React, { useState, useEffect } from "react";
 import { auth, db } from "../../firebase";
 import { onAuthStateChanged, signOut, updateProfile } from "firebase/auth";
-import { doc, onSnapshot, updateDoc, collection, query, where } from "firebase/firestore";
+import { doc, onSnapshot, updateDoc, collection } from "firebase/firestore";
 import QRCode from "react-qr-code";
 import { Link } from "react-router-dom";
+
+const blinkStyle = `
+  @keyframes pulse-gold {
+    0% { box-shadow: 0 0 0 0 rgba(0, 209, 178, 0.4); transform: scale(1); }
+    70% { box-shadow: 0 0 0 10px rgba(0, 209, 178, 0); transform: scale(1.02); }
+    100% { box-shadow: 0 0 0 0 rgba(0, 209, 178, 0); transform: scale(1); }
+  }
+`;
 
 const HomePage = () => {
     const [user, setUser] = useState(null);
@@ -11,37 +19,56 @@ const HomePage = () => {
     const [points, setPoints] = useState(0);
     const [showSettings, setShowSettings] = useState(false);
     const [occupiedMachines, setOccupiedMachines] = useState(0);
+    const [todaySchedule, setTodaySchedule] = useState([]);
     const TOTAL_MACHINES = 3;
 
     const avatars = ["1.png", "2.png", "3.png", "4.png", "5.png", "6.png"];
 
-    // --- NEW: LOGIC TO CALCULATE ACTIVE USERS ---
     useEffect(() => {
         const usersRef = collection(db, "users");
-        // We listen to all users to see who is currently playing
         const unsubscribe = onSnapshot(usersRef, (snapshot) => {
             let activeCount = 0;
+            const schedule = [];
             const now = new Date();
+            const startOfToday = new Date();
+            startOfToday.setHours(0, 0, 0, 0);
+            
+            // 10-minute grace period (must match Admin Panel)
+            const SETUP_GRACE_PERIOD = 10 * 60 * 1000;
 
             snapshot.forEach((userDoc) => {
                 const data = userDoc.data();
-                if (data.sessions && data.sessions.length > 0) {
-                    // Get the very last session added
-                    const lastSession = data.sessions[data.sessions.length - 1];
-                    const startTime = new Date(lastSession.startTime);
-                    const durationHours = parseFloat(lastSession.duration);
-                    const endTime = new Date(startTime.getTime() + durationHours * 60 * 60 * 1000);
+                const userId = userDoc.id;
+                
+                if (data.sessions) {
+                    data.sessions.forEach(session => {
+                        const startTime = new Date(session.startTime);
+                        // Added grace period to the end time calculation
+                        const endTime = new Date(startTime.getTime() + (parseFloat(session.duration) * 60 * 60 * 1000) + SETUP_GRACE_PERIOD);
+                        
+                        if (now >= startTime && now < endTime) {
+                            activeCount++;
+                        }
 
-                    // If current time is before the end of their session, they are occupying a machine
-                    if (now < endTime) {
-                        activeCount++;
-                    }
+                        if (endTime > now && startTime >= startOfToday) {
+                            schedule.push({
+                                isMe: auth.currentUser?.uid === userId,
+                                start: startTime,
+                                end: endTime,
+                                machine: session.machine || "N/A", // Pull machine data
+                                active: now >= startTime && now < endTime
+                            });
+                        }
+                    });
                 }
             });
+
+            schedule.sort((a, b) => a.start - b.start);
+            setTodaySchedule(schedule);
             setOccupiedMachines(activeCount > TOTAL_MACHINES ? TOTAL_MACHINES : activeCount);
         });
         return () => unsubscribe();
-    }, []);
+    }, [user]);
 
     useEffect(() => {
         const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
@@ -80,9 +107,8 @@ const HomePage = () => {
     const containerStyle = { background: '#050505', minHeight: '100vh' };
     const cardStyle = { background: '#121212', border: '1px solid #222', borderRadius: '24px', color: 'white' };
     
-    // --- UI COMPONENTS ---
     const MachineStatus = () => (
-        <div className="box mb-5" style={{ background: '#1a1a1a', border: '1px solid #333', borderRadius: '20px' }}>
+        <div className="box mb-4" style={{ background: '#1a1a1a', border: '1px solid #333', borderRadius: '20px' }}>
             <div className="level is-mobile mb-0">
                 <div className="level-item has-text-centered">
                     <div>
@@ -90,15 +116,13 @@ const HomePage = () => {
                         <p className={`title is-3 ${occupiedMachines < TOTAL_MACHINES ? 'has-text-success' : 'has-text-danger'}`}>
                             {TOTAL_MACHINES - occupiedMachines} / {TOTAL_MACHINES}
                         </p>
-                        <p className="is-size-7 has-text-grey-light">Machines Available Now</p>
                     </div>
                 </div>
             </div>
-            {/* Visual machine dots */}
-            <div className="mt-3 is-flex is-justify-content-center">
+            <div className="mt-2 is-flex is-justify-content-center">
                 {[...Array(TOTAL_MACHINES)].map((_, i) => (
                     <div key={i} style={{
-                        width: '12px', height: '12px', borderRadius: '50%', margin: '0 5px',
+                        width: '10px', height: '10px', borderRadius: '50%', margin: '0 5px',
                         background: i < occupiedMachines ? '#ff3860' : '#00d1b2',
                         boxShadow: i < occupiedMachines ? '0 0 8px #ff3860' : '0 0 8px #00d1b2'
                     }}></div>
@@ -127,11 +151,67 @@ const HomePage = () => {
 
     return (
         <section className="section" style={containerStyle}>
+            <style>{blinkStyle}</style>
             <div className="container">
                 <div className="columns is-centered">
                     <div className="column is-4">
                         
                         <MachineStatus />
+
+                        <Link to="/leaderboard" style={{ textDecoration: 'none' }}>
+                            <div className="box mb-5" style={{ 
+                                background: 'linear-gradient(135deg, #00d1b2 0%, #008f7a 100%)', 
+                                borderRadius: '20px', animation: 'pulse-gold 2s infinite', padding: '15px'
+                            }}>
+                                <div className="level is-mobile mb-0">
+                                    <div className="level-left">
+                                        <div className="level-item"><span className="icon is-medium has-text-white"><i className="fas fa-trophy fa-lg"></i></span></div>
+                                        <div className="level-item">
+                                            <div>
+                                                <p className="title is-6 has-text-white mb-0">HALL OF FAME</p>
+                                                <p className="is-size-7 has-text-white has-text-weight-bold" style={{opacity: 0.9}}>BEAT THE FASTEST LAPS →</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="level-right"><span className="tag is-white is-rounded has-text-weight-bold is-small">RANKINGS</span></div>
+                                </div>
+                            </div>
+                        </Link>
+
+                        {/* --- UPDATED SCHEDULE TABLE --- */}
+                        <div className="box mb-5" style={{ background: '#121212', border: '1px solid #222', borderRadius: '24px' }}>
+                            <p className="label has-text-grey is-size-7 mb-4 uppercase" style={{letterSpacing: '1px'}}>Track Itinerary</p>
+                            <div style={{ maxHeight: '250px', overflowY: 'auto', paddingRight: '5px' }}>
+                                {todaySchedule.length > 0 ? todaySchedule.map((item, idx) => (
+                                    <div key={idx} className="mb-2 p-3" style={{ 
+                                        background: item.active ? '#00d1b211' : '#1a1a1a', 
+                                        borderRadius: '12px',
+                                        borderLeft: item.active ? '4px solid #00d1b2' : '4px solid #333'
+                                    }}>
+                                        <div className="is-flex is-justify-content-between is-align-items-center mb-1">
+                                            <p className="is-size-7 has-text-white" style={{opacity: 0.8}}>
+                                                {item.start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} 
+                                                <span className="mx-2">→</span>
+                                                {item.end.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                            </p>
+                                            <span className={`tag is-small ${item.machine === "1" ? 'is-warning' : 'is-dark'}`} style={{fontSize: '0.65rem'}}>
+                                                {item.machine === "1" ? "SIM RIG" : `PC #${item.machine}`}
+                                            </span>
+                                        </div>
+                                        <div className="is-flex is-justify-content-between">
+                                            <p className="is-size-7 has-text-weight-bold">
+                                                {item.isMe ? <span className="has-text-primary">YOUR SESSION</span> : <span className="has-text-grey">STATION OCCUPIED</span>}
+                                            </p>
+                                            <p className={`is-size-7 ${item.active ? 'has-text-success' : 'has-text-grey-light'}`}>
+                                                {item.active ? '● LIVE' : 'UPCOMING'}
+                                            </p>
+                                        </div>
+                                    </div>
+                                )) : (
+                                    <p className="has-text-centered has-text-grey is-size-7 py-4">No sessions scheduled</p>
+                                )}
+                            </div>
+                        </div>
 
                         {/* PROFILE HEADER */}
                         <div className="mb-6 has-text-centered">
@@ -150,7 +230,7 @@ const HomePage = () => {
                                 <div className="columns is-multiline is-mobile">
                                     {avatars.map((img) => (
                                         <div key={img} className="column is-4">
-                                            <img src={`/avatars/${img}`} className="is-rounded" style={{ cursor: 'pointer' }} onClick={() => changeAvatar(img)} />
+                                            <img src={`/avatars/${img}`} className="is-rounded" style={{ cursor: 'pointer', border: userData?.avatar === img ? '2px solid #00d1b2' : 'none' }} onClick={() => changeAvatar(img)} alt="avatar option" />
                                         </div>
                                     ))}
                                 </div>
@@ -166,13 +246,13 @@ const HomePage = () => {
                                             <span className="tag is-dark" style={{ background: '#252525', letterSpacing: '2px' }}>GAMER ID</span>
                                         </div>
                                         <div style={{ background: 'white', padding: '12px', display: 'inline-block', borderRadius: '12px' }}>
-                                            <QRCode value={JSON.stringify({ uid: user.uid })} size={200} level="H" />
+                                            <QRCode value={JSON.stringify({ uid: user.uid })} size={180} level="H" />
                                         </div>
                                         <div className="mt-5 has-text-left">
                                             <div className="columns is-mobile is-vcentered">
                                                 <div className="column">
                                                     <p className="is-size-7 has-text-grey">FULL NAME</p>
-                                                    <p className="is-size-6 has-text-weight-bold has-text-white">{userData?.fullName || "..."}</p>
+                                                    <p className="is-size-6 has-text-weight-bold has-text-white" style={{whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'}}>{userData?.fullName || "..."}</p>
                                                 </div>
                                                 <div className="column has-text-right">
                                                     <p className="is-size-7 has-text-grey">ID TAG</p>

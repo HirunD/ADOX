@@ -9,6 +9,8 @@ import AdminPanel from "./screens/AdminPanel";
 import PlayerReport from "./screens/PlayerReport";
 import AnalyticsPage from "./screens/Analytics";
 import RevenueDashboard from "./screens/RevenueDashboard/RevenueDashboard";
+import Leaderboard from "./screens/Leaderboard/Leaderboard";
+import AdminPricing from "./screens/AdminPricing";
 
 const App = () => {
 
@@ -26,6 +28,9 @@ const App = () => {
                 <Route path="/report/:uid" element={<PlayerReport />} />
                 <Route path="/admin/analytics" element={<AnalyticsPage />} />
                 <Route path="/revenue" element={<RevenueDashboard />} />
+                <Route path="/leaderboard" element={<Leaderboard />} />
+                <Route path="/price" element={<AdminPricing />} />
+
             </Routes>
         </BrowserRouter>
     );
