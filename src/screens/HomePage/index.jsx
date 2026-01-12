@@ -5,11 +5,39 @@ import { doc, onSnapshot, updateDoc, collection } from "firebase/firestore";
 import QRCode from "react-qr-code";
 import { Link } from "react-router-dom";
 
-const blinkStyle = `
+const customStyles = `
   @keyframes pulse-gold {
     0% { box-shadow: 0 0 0 0 rgba(0, 209, 178, 0.4); transform: scale(1); }
     70% { box-shadow: 0 0 0 10px rgba(0, 209, 178, 0); transform: scale(1.02); }
     100% { box-shadow: 0 0 0 0 rgba(0, 209, 178, 0); transform: scale(1); }
+  }
+
+  .itinerary-scroll::-webkit-scrollbar { width: 4px; }
+  .itinerary-scroll::-webkit-scrollbar-track { background: #121212; }
+  .itinerary-scroll::-webkit-scrollbar-thumb { background: #333; border-radius: 10px; }
+  
+  .masonry-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 1.2rem;
+  }
+
+  @media (min-width: 1024px) {
+    .masonry-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      grid-auto-rows: min-content;
+      gap: 1.5rem;
+    }
+    .span-2 { grid-column: span 2; }
+  }
+
+  .tile-card {
+    transition: transform 0.3s ease, border-color 0.3s ease;
+  }
+  .tile-card:hover {
+    transform: translateY(-5px);
+    border-color: #00d1b2 !important;
   }
 `;
 
@@ -24,102 +52,89 @@ const HomePage = () => {
 
     const avatars = ["1.png", "2.png", "3.png", "4.png", "5.png", "6.png"];
 
+    const formatMachineName = (name) => {
+        const val = String(name).trim();
+        if (val === "1" || val === "Sim" || val === "Sim Rig") return "Sim Rig";
+        if (val === "2" || val === "PC1" || val === "PS4 #1") return "PS4 #1";
+        if (val === "3" || val === "PC2" || val === "PS4 #2") return "PS4 #2";
+        return val;
+    };
+
+    const handleLogout = async () => {
+        try { await signOut(auth); } catch (err) { console.error(err); }
+    };
+
     useEffect(() => {
-        const usersRef = collection(db, "users");
-        const unsubscribe = onSnapshot(usersRef, (snapshot) => {
+        const unsubscribe = onSnapshot(collection(db, "users"), (snapshot) => {
             let activeCount = 0;
             const schedule = [];
             const now = new Date();
             const startOfToday = new Date();
             startOfToday.setHours(0, 0, 0, 0);
             
-            // 10-minute grace period (must match Admin Panel)
-            const SETUP_GRACE_PERIOD = 10 * 60 * 1000;
-
             snapshot.forEach((userDoc) => {
                 const data = userDoc.data();
-                const userId = userDoc.id;
-                
                 if (data.sessions) {
                     data.sessions.forEach(session => {
                         const startTime = new Date(session.startTime);
-                        // Added grace period to the end time calculation
-                        const endTime = new Date(startTime.getTime() + (parseFloat(session.duration) * 60 * 60 * 1000) + SETUP_GRACE_PERIOD);
+                        const endTime = new Date(startTime.getTime() + (parseFloat(session.duration) * 60 * 60 * 1000) + 600000);
                         
-                        if (now >= startTime && now < endTime) {
-                            activeCount++;
-                        }
+                        if (now >= startTime && now < endTime) activeCount++;
 
                         if (endTime > now && startTime >= startOfToday) {
                             schedule.push({
-                                isMe: auth.currentUser?.uid === userId,
+                                isMe: auth.currentUser?.uid === userDoc.id,
                                 start: startTime,
                                 end: endTime,
-                                machine: session.machine || "N/A", // Pull machine data
+                                machine: formatMachineName(session.machine),
                                 active: now >= startTime && now < endTime
                             });
                         }
                     });
                 }
             });
-
-            schedule.sort((a, b) => a.start - b.start);
-            setTodaySchedule(schedule);
+            setTodaySchedule(schedule.sort((a, b) => a.start - b.start));
             setOccupiedMachines(activeCount > TOTAL_MACHINES ? TOTAL_MACHINES : activeCount);
         });
         return () => unsubscribe();
     }, [user]);
 
     useEffect(() => {
-        const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-            setUser(currentUser);
-        });
+        const unsubscribe = onAuthStateChanged(auth, (u) => setUser(u));
         return () => unsubscribe();
     }, []);
 
     useEffect(() => {
         if (user) {
-            const userRef = doc(db, "users", user.uid);
-            const unsubscribe = onSnapshot(userRef, (docSnap) => {
+            const unsubscribe = onSnapshot(doc(db, "users", user.uid), (docSnap) => {
                 if (docSnap.exists()) {
                     const data = docSnap.data();
                     setUserData(data); 
-                    const sessions = data.sessions || [];
-                    const totalHours = sessions.reduce((acc, s) => acc + (parseFloat(s.duration) || 0), 0);
-                    setPoints(totalHours * 2);
+                    const hrs = (data.sessions || []).reduce((acc, s) => acc + (parseFloat(s.duration) || 0), 0);
+                    setPoints(hrs * 2);
                 }
             });
             return () => unsubscribe();
         }
     }, [user]);
 
-    const changeAvatar = async (imgName) => {
+    const changeAvatar = async (img) => {
         if (!user) return;
-        try {
-            await updateDoc(doc(db, "users", user.uid), { avatar: imgName });
-            await updateProfile(user, { photoURL: `/avatars/${imgName}` });
-            setShowSettings(false);
-        } catch (err) { console.error(err); }
+        await updateDoc(doc(db, "users", user.uid), { avatar: img });
+        setShowSettings(false);
     };
 
-    const handleLogout = () => signOut(auth);
-
-    const containerStyle = { background: '#050505', minHeight: '100vh' };
-    const cardStyle = { background: '#121212', border: '1px solid #222', borderRadius: '24px', color: 'white' };
-    
-    const MachineStatus = () => (
-        <div className="box mb-4" style={{ background: '#1a1a1a', border: '1px solid #333', borderRadius: '20px' }}>
-            <div className="level is-mobile mb-0">
-                <div className="level-item has-text-centered">
-                    <div>
-                        <p className="heading has-text-grey">Live Station Availability</p>
-                        <p className={`title is-3 ${occupiedMachines < TOTAL_MACHINES ? 'has-text-success' : 'has-text-danger'}`}>
-                            {TOTAL_MACHINES - occupiedMachines} / {TOTAL_MACHINES}
-                        </p>
-                    </div>
-                </div>
+    // --- SHARED COMPONENTS ---
+    const StatusTile = () => (
+        <div className="box tile-card" style={{ background: '#1a1a1a', border: '1px solid #333', borderRadius: '24px' }}>
+            <p className="heading has-text-grey">Live Slots</p>
+            <div className="has-text-centered py-4">
+                <p className={`title is-1 ${occupiedMachines < TOTAL_MACHINES ? 'has-text-success' : 'has-text-danger'}`}>
+                    {TOTAL_MACHINES - occupiedMachines}
+                </p>
+                <p className="is-size-7 has-text-grey">FREE STATIONS</p>
             </div>
-            <div className="mt-2 is-flex is-justify-content-center">
+            <div className="is-flex is-justify-content-center mt-2">
                 {[...Array(TOTAL_MACHINES)].map((_, i) => (
                     <div key={i} style={{
                         width: '10px', height: '10px', borderRadius: '50%', margin: '0 5px',
@@ -131,157 +146,154 @@ const HomePage = () => {
         </div>
     );
 
+  const ItineraryTile = ({ isSpan2 }) => (
+        <div className={`box tile-card ${isSpan2 ? 'span-2' : ''}`} style={{ background: '#121212', border: '1px solid #222', borderRadius: '24px' }}>
+            <p className="label has-text-grey is-size-7 mb-4">LIVE TRACK SCHEDULE</p>
+            <div className="itinerary-scroll" style={{ maxHeight: '250px', overflowY: 'auto' }}>
+                {todaySchedule.length > 0 ? todaySchedule.map((item, idx) => (
+                    <div key={idx} className="mb-2 p-3 is-flex is-justify-content-between is-align-items-center" 
+                        style={{ 
+                            background: '#1a1a1a', 
+                            borderRadius: '15px',
+                            border: item.isMe ? '1px solid #00d1b2' : 'none' // Highlights your session
+                        }}>
+                        <div>
+                            <p className="is-size-7 has-text-white has-text-weight-bold">
+                                {item.isMe ? "★ MY SESSION" : (item.active ? "● IN PROGRESS" : "UPCOMING")}
+                            </p>
+                            <p className="is-size-7 has-text-grey">Ends: {item.end.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                        </div>
+                        <span className={`tag is-rounded is-small ${item.active ? 'is-success' : 'is-dark'}`} style={{ minWidth: '90px' }}>
+                            {item.machine}
+                        </span>
+                    </div>
+                )) : <p className="has-text-centered has-text-grey is-size-7">No active bookings</p>}
+            </div>
+        </div>
+    );
+    // --- PUBLIC SIGNED-OUT VIEW ---
     if (!user) {
         return (
-            <section className="section" style={containerStyle}>
-                <div className="container mt-6">
-                    <div className="columns is-centered">
-                        <div className="column is-4">
-                            <MachineStatus />
-                            <div className="box has-text-centered" style={{ background: '#121212', border: '1px solid #333', color: 'white' }}>
-                                <p className="subtitle has-text-grey-light">Join ADOX Gaming</p>
-                                <Link to="/login" className="button is-primary is-fullwidth">Login to your Pass</Link>
-                            </div>
+            <section className="section" style={{ background: '#050505', minHeight: '100vh', padding: '1.5rem' }}>
+                <style>{customStyles}</style>
+                <div className="container">
+                    <div className="has-text-centered mb-6">
+                        <h1 className="title is-3 has-text-white mb-2">ADOX GAMING</h1>
+                        <p className="subtitle is-6 has-text-primary">Experience the Ultimate Rig</p>
+                    </div>
+
+                    <div className="masonry-grid">
+                        <StatusTile />
+                        
+                        <div className="span-2">
+                             <Link to="/login" className="box tile-card" style={{ background: 'linear-gradient(135deg, #00d1b2 0%, #008f7a 100%)', borderRadius: '24px', animation: 'pulse-gold 2s infinite' }}>
+                                <div className="is-flex is-justify-content-between is-align-items-center py-2">
+                                    <span>
+                                        <p className="title is-4 has-text-white mb-1">JOIN THE RACE</p>
+                                        <p className="subtitle is-7 has-text-white">LOGIN TO YOUR PASS →</p>
+                                    </span>
+                                    <i className="fas fa-id-card fa-3x has-text-white" style={{ opacity: 0.4 }}></i>
+                                </div>
+                            </Link>
                         </div>
+
+                        <ItineraryTile isSpan2={true} />
+
+                        <Link to="/leaderboard" className="box tile-card" style={{ background: '#1a1a1a', border: '1px solid #333', borderRadius: '24px' }}>
+                            <div className="has-text-centered">
+                                <i className="fas fa-trophy fa-2x has-text-warning mb-2"></i>
+                                <p className="title is-6 has-text-white">LEADERBOARD</p>
+                                <p className="is-size-7 has-text-grey">View Fastest Laps</p>
+                            </div>
+                        </Link>
+
+                        <Link to="/login" className="box tile-card span-2" style={{ background: '#121212', border: '1px dashed #444', borderRadius: '24px' }}>
+                            <div className="has-text-centered py-3">
+                                <p className="title is-6 has-text-white">New Player?</p>
+                                <p className="is-size-7 has-text-grey">Click here to register and start earning points!</p>
+                            </div>
+                        </Link>
                     </div>
                 </div>
             </section>
         );
     }
 
+    // --- PRIVATE SIGNED-IN VIEW ---
     return (
-        <section className="section" style={containerStyle}>
-            <style>{blinkStyle}</style>
+        <section className="section" style={{ background: '#050505', minHeight: '100vh', padding: '1rem' }}>
+            <style>{customStyles}</style>
             <div className="container">
-                <div className="columns is-centered">
-                    <div className="column is-4">
-                        
-                        <MachineStatus />
+                
+                {/* HEADER */}
+                <div className="is-flex is-justify-content-between is-align-items-center mb-6 mt-2">
+                    <div>
+                        <h1 className="title is-4 has-text-white mb-0">Hi, {userData?.fullName?.split(' ')[0]}</h1>
+                        <p className="is-size-7 has-text-primary">DRIVER ID: #{user.uid.substring(0, 5).toUpperCase()}</p>
+                    </div>
+                    <figure className="image is-48x48" onClick={() => setShowSettings(true)} style={{ cursor: 'pointer' }}>
+                        <img className="is-rounded" src={userData?.avatar ? `/avatars/${userData.avatar}` : "/avatars/1.png"} style={{ border: '2px solid #00d1b2' }} alt="profile" />
+                    </figure>
+                </div>
 
-                        <Link to="/leaderboard" style={{ textDecoration: 'none' }}>
-                            <div className="box mb-5" style={{ 
-                                background: 'linear-gradient(135deg, #00d1b2 0%, #008f7a 100%)', 
-                                borderRadius: '20px', animation: 'pulse-gold 2s infinite', padding: '15px'
-                            }}>
-                                <div className="level is-mobile mb-0">
-                                    <div className="level-left">
-                                        <div className="level-item"><span className="icon is-medium has-text-white"><i className="fas fa-trophy fa-lg"></i></span></div>
-                                        <div className="level-item">
-                                            <div>
-                                                <p className="title is-6 has-text-white mb-0">HALL OF FAME</p>
-                                                <p className="is-size-7 has-text-white has-text-weight-bold" style={{opacity: 0.9}}>BEAT THE FASTEST LAPS →</p>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div className="level-right"><span className="tag is-white is-rounded has-text-weight-bold is-small">RANKINGS</span></div>
+                <div className="masonry-grid">
+                    <div className="span-2">
+                        <Link to="/leaderboard">
+                            <div className="box tile-card" style={{ background: 'linear-gradient(135deg, #00d1b2 0%, #008f7a 100%)', borderRadius: '24px', animation: 'pulse-gold 2s infinite' }}>
+                                <div className="is-flex is-justify-content-between is-align-items-center">
+                                    <span>
+                                        <p className="title is-4 has-text-white mb-0">LEADERBOARD</p>
+                                        <p className="subtitle is-7 has-text-white">VIEW RANKINGS →</p>
+                                    </span>
+                                    <i className="fas fa-flag-checkered fa-3x has-text-white" style={{ opacity: 0.4 }}></i>
                                 </div>
                             </div>
                         </Link>
+                    </div>
 
-                        {/* --- UPDATED SCHEDULE TABLE --- */}
-                        <div className="box mb-5" style={{ background: '#121212', border: '1px solid #222', borderRadius: '24px' }}>
-                            <p className="label has-text-grey is-size-7 mb-4 uppercase" style={{letterSpacing: '1px'}}>Track Itinerary</p>
-                            <div style={{ maxHeight: '250px', overflowY: 'auto', paddingRight: '5px' }}>
-                                {todaySchedule.length > 0 ? todaySchedule.map((item, idx) => (
-                                    <div key={idx} className="mb-2 p-3" style={{ 
-                                        background: item.active ? '#00d1b211' : '#1a1a1a', 
-                                        borderRadius: '12px',
-                                        borderLeft: item.active ? '4px solid #00d1b2' : '4px solid #333'
-                                    }}>
-                                        <div className="is-flex is-justify-content-between is-align-items-center mb-1">
-                                            <p className="is-size-7 has-text-white" style={{opacity: 0.8}}>
-                                                {item.start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} 
-                                                <span className="mx-2">→</span>
-                                                {item.end.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                            </p>
-                                            <span className={`tag is-small ${item.machine === "1" ? 'is-warning' : 'is-dark'}`} style={{fontSize: '0.65rem'}}>
-                                                {item.machine === "1" ? "SIM RIG" : `PC #${item.machine}`}
-                                            </span>
-                                        </div>
-                                        <div className="is-flex is-justify-content-between">
-                                            <p className="is-size-7 has-text-weight-bold">
-                                                {item.isMe ? <span className="has-text-primary">YOUR SESSION</span> : <span className="has-text-grey">STATION OCCUPIED</span>}
-                                            </p>
-                                            <p className={`is-size-7 ${item.active ? 'has-text-success' : 'has-text-grey-light'}`}>
-                                                {item.active ? '● LIVE' : 'UPCOMING'}
-                                            </p>
-                                        </div>
-                                    </div>
-                                )) : (
-                                    <p className="has-text-centered has-text-grey is-size-7 py-4">No sessions scheduled</p>
-                                )}
-                            </div>
+                    <StatusTile />
+
+                    <div className="box tile-card has-text-centered" style={{ background: '#121212', border: '1px solid #222', borderRadius: '24px' }}>
+                        <p className="label has-text-grey is-size-7 mb-4">MEMBER QR</p>
+                        <div style={{ background: 'white', padding: '10px', display: 'inline-block', borderRadius: '15px' }}>
+                            <QRCode value={JSON.stringify({ uid: user.uid })} size={140} />
                         </div>
+                    </div>
 
-                        {/* PROFILE HEADER */}
-                        <div className="mb-6 has-text-centered">
-                            <div style={{ position: 'relative', display: 'inline-block' }}>
-                                <figure className="image is-96x96 mb-3">
-                                    <img className="is-rounded" src={userData?.avatar ? `/avatars/${userData.avatar}` : "/avatars/1.png"} alt="Avatar" style={{ border: '3px solid #00d1b2', padding: '3px', background: '#121212' }} />
-                                </figure>
-                                <button onClick={() => setShowSettings(!showSettings)} className="button is-primary is-small is-rounded" style={{ position: 'absolute', bottom: '15px', right: '-5px', height: '28px', width: '28px', border: '2px solid #050505' }}>✎</button>
-                            </div>
-                            <h1 className="title is-4 has-text-white mb-1">Welcome, {userData?.fullName?.split(' ')[0] || "Player"}</h1>
-                        </div>
+                    <ItineraryTile isSpan2={true} />
 
-                        {showSettings && (
-                            <div className="box mb-5" style={{ background: '#1a1a1a', border: '1px solid #00d1b2' }}>
-                                <p className="label has-text-white is-size-7 mb-3">SELECT CHARACTER</p>
-                                <div className="columns is-multiline is-mobile">
-                                    {avatars.map((img) => (
-                                        <div key={img} className="column is-4">
-                                            <img src={`/avatars/${img}`} className="is-rounded" style={{ cursor: 'pointer', border: userData?.avatar === img ? '2px solid #00d1b2' : 'none' }} onClick={() => changeAvatar(img)} alt="avatar option" />
-                                        </div>
-                                    ))}
-                                </div>
-                                <button className="button is-dark is-fullwidth is-small mt-2" onClick={() => setShowSettings(false)}>Cancel</button>
-                            </div>
-                        )}
-                        
-                        {!showSettings && (
-                            <>
-                                <div className="card mb-5" style={cardStyle}>
-                                    <div className="card-content has-text-centered">
-                                        <div className="mb-4">
-                                            <span className="tag is-dark" style={{ background: '#252525', letterSpacing: '2px' }}>GAMER ID</span>
-                                        </div>
-                                        <div style={{ background: 'white', padding: '12px', display: 'inline-block', borderRadius: '12px' }}>
-                                            <QRCode value={JSON.stringify({ uid: user.uid })} size={180} level="H" />
-                                        </div>
-                                        <div className="mt-5 has-text-left">
-                                            <div className="columns is-mobile is-vcentered">
-                                                <div className="column">
-                                                    <p className="is-size-7 has-text-grey">FULL NAME</p>
-                                                    <p className="is-size-6 has-text-weight-bold has-text-white" style={{whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'}}>{userData?.fullName || "..."}</p>
-                                                </div>
-                                                <div className="column has-text-right">
-                                                    <p className="is-size-7 has-text-grey">ID TAG</p>
-                                                    <p className="is-size-6 has-text-weight-bold has-text-white">#{user.uid.substring(0, 5).toUpperCase()}</p>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div className="box" style={{ background: 'linear-gradient(145deg, #1a1a1a, #0a0a0a)', border: '1px solid #00d1b244', borderRadius: '20px' }}>
-                                    <div className="level is-mobile mb-0">
-                                        <div className="level-item has-text-centered">
-                                            <div>
-                                                <p className="heading has-text-grey-light">Total Adox Points</p>
-                                                <p className="title is-2 has-text-white mb-1">{points}</p>
-                                                <div className="is-size-7 has-text-primary">Play more to earn rewards</div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </>
-                        )}
-
-                        <button className="button is-text is-fullwidth has-text-grey mt-5" onClick={handleLogout}>Sign Out</button>
-
+                    <div className="box tile-card" style={{ background: 'linear-gradient(145deg, #1a1a1a, #0a0a0a)', border: '1px solid #00d1b244', borderRadius: '24px' }}>
+                        <p className="heading has-text-grey-light">Points</p>
+                        <p className="title is-2 has-text-white mb-0">{points}</p>
+                        <div className="is-size-7 has-text-primary mt-2">Level Up Soon</div>
                     </div>
                 </div>
+
+                <div className="mt-6 mb-6 px-4">
+                    <button className="button is-danger is-outlined is-fullwidth" onClick={handleLogout} style={{ borderRadius: '15px', height: '60px', fontWeight: 'bold', fontSize: '1.2rem', borderWidth: '2px' }}>
+                        SIGN OUT
+                    </button>
+                </div>
             </div>
+
+            {/* AVATAR MODAL */}
+            {showSettings && (
+                <div className="modal is-active">
+                    <div className="modal-background" onClick={() => setShowSettings(false)}></div>
+                    <div className="modal-content px-4">
+                        <div className="box" style={{ background: '#1a1a1a', borderRadius: '24px', border: '1px solid #00d1b2' }}>
+                            <p className="title is-5 has-text-white mb-5">Select Character</p>
+                            <div className="columns is-multiline is-mobile">
+                                {avatars.map(img => (
+                                    <div key={img} className="column is-4">
+                                        <img src={`/avatars/${img}`} className="is-rounded" onClick={() => changeAvatar(img)} style={{ cursor: 'pointer', border: userData?.avatar === img ? '2px solid #00d1b2' : 'none' }} alt="option" />
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
         </section>
     );
 };

@@ -13,34 +13,29 @@ import {
   onSnapshot,
 } from "firebase/firestore";
 
-const isCurrentlyPeakTime = () => {
-  const now = new Date();
-  const currentTotalMinutes = now.getHours() * 60 + now.getMinutes();
-  const peakStart = 13 * 60 + 30; 
-  const peakEnd = 15 * 60 + 0; 
-  return currentTotalMinutes >= peakStart && currentTotalMinutes < peakEnd;
-};
-
 const AdminPanel = () => {
   const [isAdmin, setIsAdmin] = useState(false);
   const [password, setPassword] = useState("");
   const [userData, setUserData] = useState(null);
-  const [isLocked, setIsLocked] = useState(false); // Scan lock
+  const [isLocked, setIsLocked] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
   const [pendingTransaction, setPendingTransaction] = useState(null);
 
-  const [pricingConfig, setPricingConfig] = useState(null);
+  const [standardPricing, setStandardPricing] = useState(null);
+  const [peakPricing, setPeakPricing] = useState(null);
   const [selectedMachine, setSelectedMachine] = useState("");
+  
+  const [lapTime, setLapTime] = useState("");
   const [couponCode, setCouponCode] = useState("");
   const [appliedCoupon, setAppliedCoupon] = useState(null);
-  const [couponError, setCouponError] = useState("");
-
+  
+  const [receiptData, setReceiptData] = useState(null);
   const [activeSessions, setActiveSessions] = useState([]);
   const [occupiedCount, setOccupiedCount] = useState(0);
-  const [manualOverride, setManualOverride] = useState(false); // CAPACITY OVERRIDE
+  const [manualOverride, setManualOverride] = useState(false);
   
-  const MACHINES = ["Sim", "PC1", "PC2"];
-  const TOTAL_CAPACITY = MACHINES.length;
+  const MACHINES = ["Sim Rig", "PS4 #1", "PS4 #2"];
+  const TOTAL_CAPACITY = 3;
 
   const [searchPhone, setSearchPhone] = useState("");
   const [searchLoading, setSearchLoading] = useState(false);
@@ -49,19 +44,29 @@ const AdminPanel = () => {
   const scannerRef = useRef(null);
   const audioRef = useRef(new Audio("/success.mp3"));
 
-  // --- 1. DATA LISTENERS ---
+  // --- PEAK DETECTION LOGIC ---
+  const checkIsPeak = () => {
+    // 1. Check Automatic Time Rules
+    const now = new Date();
+    const day = now.getDay(); 
+    const hour = now.getHours();
+    const autoPeak = (day === 0 || day === 6 || hour >= 18);
+
+    // 2. Check Manual Firestore Override (from the 'pricing' doc)
+    const manualPeak = standardPricing?.isPeak === true;
+
+    return autoPeak || manualPeak;
+  };
+
+  // --- DATA LISTENERS ---
   useEffect(() => {
-    const unsub = onSnapshot(doc(db, "settings", "pricing"), (docSnap) => {
-      if (docSnap.exists()) {
-        const rawData = docSnap.data();
-        if (rawData.pricing && rawData.pricing.standard) {
-          setPricingConfig(rawData.pricing);
-        } else {
-          setPricingConfig(rawData);
-        }
-      }
+    const unsubStd = onSnapshot(doc(db, "settings", "pricing"), (docSnap) => {
+      if (docSnap.exists()) setStandardPricing(docSnap.data());
     });
-    return () => unsub();
+    const unsubPeak = onSnapshot(doc(db, "settings", "peak"), (docSnap) => {
+      if (docSnap.exists()) setPeakPricing(docSnap.data());
+    });
+    return () => { unsubStd(); unsubPeak(); };
   }, []);
 
   useEffect(() => {
@@ -73,9 +78,15 @@ const AdminPanel = () => {
         if (data.sessions) {
           data.sessions.forEach((s) => {
             const start = new Date(s.startTime);
-            const end = new Date(start.getTime() + parseFloat(s.duration) * 3600000 + 600000);
+            const durationHrs = parseFloat(s.duration) || 0;
+            const end = new Date(start.getTime() + durationHrs * 3600000 + 600000);
             if (now >= start && now < end) {
-              active.push({ name: data.fullName, machine: s.machine, endTime: end, timeLeft: Math.round((end - now) / 60000) });
+              active.push({ 
+                name: data.fullName, 
+                machine: s.machine, 
+                endTime: end, 
+                timeLeft: Math.round((end - now) / 60000) 
+              });
             }
           });
         }
@@ -84,9 +95,9 @@ const AdminPanel = () => {
       setOccupiedCount(active.length);
     });
     return () => unsubscribe();
-  }, []);
+  }, [standardPricing]); // Re-run when pricing doc updates
 
-  // --- 2. CAMERA LOGIC ---
+  // --- CAMERA LOGIC ---
   const handleScan = async (result) => {
     if (isLocked || !result) return;
     try {
@@ -105,54 +116,40 @@ const AdminPanel = () => {
 
   useEffect(() => {
     if (isAdmin && videoRef.current) {
-      scannerRef.current = new QrScanner(
-        videoRef.current,
-        (result) => handleScan(result),
-        { highlightScanRegion: true, highlightCodeOutline: true }
-      );
+      scannerRef.current = new QrScanner(videoRef.current, (res) => handleScan(res), {
+        highlightScanRegion: true,
+        highlightCodeOutline: true,
+      });
       scannerRef.current.start().catch((err) => console.error(err));
     }
-    return () => {
-      if (scannerRef.current) {
-        scannerRef.current.stop();
-        scannerRef.current.destroy();
-      }
-    };
+    return () => scannerRef.current?.destroy();
   }, [isAdmin]);
 
-  // --- 3. PRICING & HANDLERS ---
-  const getRate = (h) => {
-    if (!pricingConfig) return 0;
-    const val = pricingConfig[h] || pricingConfig[String(h)];
-    return val ? Number(val) : 0;
+  const applyCoupon = async () => {
+    if (!couponCode) return;
+    try {
+      const couponRef = doc(db, "coupons", couponCode.toUpperCase().trim());
+      const couponSnap = await getDoc(couponRef);
+      if (couponSnap.exists() && couponSnap.data().isActive) {
+        setAppliedCoupon(couponSnap.data());
+      } else {
+        alert("Invalid Coupon");
+        setAppliedCoupon(null);
+      }
+    } catch (err) { console.error(err); }
   };
 
   const calculateFinalTotal = () => {
     if (!pendingTransaction) return 0;
     const base = Number(pendingTransaction.price);
-    if (appliedCoupon && appliedCoupon.discount) {
-      const reduction = (base * Number(appliedCoupon.discount)) / 100;
-      return base - reduction;
+    if (appliedCoupon?.discount) {
+      return base - (base * Number(appliedCoupon.discount)) / 100;
     }
     return base;
   };
 
-  const applyCoupon = async () => {
-    if (!couponCode) return;
-    setCouponError("");
-    try {
-      const couponRef = doc(db, "coupons", couponCode.toUpperCase().trim());
-      const couponSnap = await getDoc(couponRef);
-      if (couponSnap.exists()) {
-        const data = couponSnap.data();
-        if (data.isActive) { setAppliedCoupon(data); } 
-        else { setCouponError("Disabled"); setAppliedCoupon(null); }
-      } else { setCouponError("Invalid"); setAppliedCoupon(null); }
-    } catch (err) { setCouponError("Error"); }
-  };
-
   const handlePhoneSearch = async (e) => {
-    if (e) e.preventDefault();
+    e.preventDefault();
     setSearchLoading(true);
     try {
       const q = query(collection(db, "users"), where("phone", "==", searchPhone));
@@ -165,25 +162,53 @@ const AdminPanel = () => {
   };
 
   const confirmPayment = async (method) => {
-    if (!userData || !pendingTransaction || !selectedMachine) return alert("Select Station & Time!");
+    if (!userData || !pendingTransaction || !selectedMachine) return alert("Missing Info!");
     setIsUpdating(true);
+    const isPeakNow = checkIsPeak();
+    const finalAmount = calculateFinalTotal();
+    
+    const dataForReceipt = {
+      name: userData.fullName,
+      machine: selectedMachine,
+      hours: pendingTransaction.hours,
+      discount: appliedCoupon ? `${appliedCoupon.discount}%` : null,
+      lapTime: lapTime || "N/A",
+      total: finalAmount,
+      method: method,
+      time: new Date().toLocaleTimeString(),
+      isPeak: isPeakNow
+    };
+
+    setReceiptData(dataForReceipt);
+
     try {
       await updateDoc(doc(db, "users", userData.uid), {
         sessions: arrayUnion({
           startTime: new Date().toISOString(),
           duration: pendingTransaction.hours,
-          amountPaid: calculateFinalTotal(),
+          amountPaid: finalAmount,
           method: method,
           machine: selectedMachine,
+          bestLap: lapTime || null,
+          isPeak: isPeakNow
         }),
       });
-      setTimeout(() => window.print(), 500);
-      setUserData(null);
-      setPendingTransaction(null);
-      setAppliedCoupon(null);
-      setCouponCode("");
-      setSelectedMachine("");
-    } catch (e) { alert("Failed!"); } finally { setIsUpdating(false); }
+
+      setTimeout(() => {
+        window.print();
+        setUserData(null);
+        setPendingTransaction(null);
+        setAppliedCoupon(null);
+        setCouponCode("");
+        setLapTime("");
+        setSelectedMachine("");
+        setReceiptData(null);
+        setIsUpdating(false);
+      }, 800);
+    } catch (e) {
+      alert("Error saving session");
+      setIsUpdating(false);
+    }
   };
 
   if (!isAdmin) {
@@ -202,130 +227,113 @@ const AdminPanel = () => {
     );
   }
 
-  // --- Logic for Capacity Check ---
-  const isFull = occupiedCount >= TOTAL_CAPACITY && !manualOverride;
-
   return (
     <div className="section" style={{ background: "#050505", minHeight: "100vh" }}>
       
-      {/* THERMAL RECEIPT */}
-      <div id="receipt-print" style={{ display: "none" }}>
-        <div style={{ width: "80mm", padding: "5mm", fontFamily: "monospace", color: "black" }}>
-          <center>
-            <h2 style={{ margin: "0" }}>ADOX GAMING</h2>
-            <hr style={{ border: "0.5px dashed black" }} />
-          </center>
-          <div style={{ fontSize: "14px" }}>
-            <p>Date: {new Date().toLocaleDateString()}</p>
-            <p>Player: {userData?.fullName}</p>
-            <p>Station: {selectedMachine}</p>
-            <p>Duration: {pendingTransaction?.hours}h</p>
-            <hr style={{ border: "0.5px dashed black" }} />
-            <h3 style={{ textAlign: "right" }}>Total: Rs. {calculateFinalTotal()}</h3>
+      <div id="receipt-print" style={{ display: 'none' }}>
+        {receiptData && (
+          <div style={{ width: "75mm", padding: "10px", color: "black", fontFamily: "monospace" }}>
+            <center><h2 style={{ margin: "0" }}>ADOX GAMING</h2><p>---------------------------</p></center>
+            <p><b>PLAYER:</b> {receiptData.name}</p>
+            <p><b>STATION:</b> {receiptData.machine}</p>
+            <p><b>TIME:</b> {receiptData.hours} Hr {receiptData.isPeak && "(Peak)"}</p>
+            <p><b>BEST LAP:</b> {receiptData.lapTime}</p>
+            {receiptData.discount && <p><b>OFF:</b> {receiptData.discount}</p>}
+            <p><b>PAID VIA:</b> {receiptData.method}</p>
+            <p>---------------------------</p>
+            <h2 style={{ textAlign: "right" }}>Total: Rs. {receiptData.total}</h2>
+            <center style={{ marginTop: "15px", fontSize: "10px" }}><p>{receiptData.time}</p></center>
           </div>
-        </div>
+        )}
       </div>
 
       <div className="container">
         <div className="columns">
-          {/* LEFT: MONITOR */}
           <div className="column is-4">
-            <div className="box" style={{ background: "#1a1a1a", border: "1px solid #333" }}>
-              <div className="is-flex is-justify-content-space-between mb-3">
+            <div className="box mb-4" style={{ background: "#1a1a1a", border: "1px solid #333" }}>
+              <div className="is-flex is-justify-content-space-between is-align-items-center mb-2">
                 <h3 className="subtitle is-6 has-text-white mb-0">Active ({occupiedCount}/{TOTAL_CAPACITY})</h3>
                 <button 
-                  className={`button is-extremely-small ${manualOverride ? 'is-danger' : 'is-dark'}`}
+                  className={`button is-small ${manualOverride ? 'is-danger' : 'is-dark'}`} 
                   onClick={() => setManualOverride(!manualOverride)}
-                  style={{ fontSize: '0.6rem', padding: '0 5px' }}
+                  style={{ height: '24px', fontSize: '10px' }}
                 >
-                  {manualOverride ? 'OVERRIDE ON' : 'MANUAL'}
+                  {manualOverride ? 'OVERRIDE ON' : 'AUTO LOCK'}
                 </button>
               </div>
-              
-              {activeSessions.length === 0 ? (
-                <p className="has-text-grey is-size-7">No active players</p>
-              ) : (
-                activeSessions.map((s, i) => (
-                  <div key={i} className="mb-2 p-2" style={{ background: "#222", borderLeft: "4px solid #00d1b2" }}>
-                    <p className="is-size-7 has-text-white">{s.name} - <b>{s.machine}</b></p>
-                    <p className="is-size-7 has-text-warning">{s.timeLeft}m left</p>
-                  </div>
-                ))
-              )}
+              {activeSessions.map((s, i) => (
+                <div key={i} className="mb-2 p-2" style={{ background: "#222", borderLeft: "4px solid #00d1b2" }}>
+                  <p className="is-size-7 has-text-white"><b>{s.machine}</b>: {s.name}</p>
+                  <p className="is-size-7 has-text-warning">{s.timeLeft}m left</p>
+                </div>
+              ))}
             </div>
-            <div style={{ position: "relative", overflow: "hidden", borderRadius: "8px", border: "2px solid #333" }}>
-              <video ref={videoRef} style={{ width: "100%", display: "block", background: "#000" }}></video>
+            <div style={{ position: "relative", borderRadius: "10px", overflow: "hidden", border: "2px solid #333" }}>
+                <video ref={videoRef} style={{ width: "100%", display: "block", background: "#000" }}></video>
             </div>
           </div>
 
-          {/* RIGHT: BILLING */}
           <div className="column is-8">
             <div className="box mb-4" style={{ background: "#1a1a1a", border: "1px solid #333" }}>
-              <form onSubmit={handlePhoneSearch} className="field has-addons">
-                <div className="control is-expanded"><input className="input is-dark" type="text" placeholder="Phone Search..." value={searchPhone} onChange={(e) => setSearchPhone(e.target.value)} /></div>
-                <div className="control"><button type="submit" className={`button is-primary ${searchLoading ? 'is-loading' : ''}`}>Search</button></div>
-              </form>
+                <div className="is-flex is-justify-content-space-between is-align-items-center">
+                    <form onSubmit={handlePhoneSearch} className="field has-addons mb-0" style={{ flex: 1 }}>
+                        <div className="control is-expanded"><input className="input is-dark" type="text" placeholder="Phone..." value={searchPhone} onChange={(e) => setSearchPhone(e.target.value)} /></div>
+                        <div className="control"><button type="submit" className="button is-primary">Find</button></div>
+                    </form>
+                    <div className="ml-4">
+                        {checkIsPeak() ? 
+                        <span className="tag is-danger is-medium">PEAK RATES ACTIVE</span> : 
+                        <span className="tag is-success is-medium">NORMAL RATES</span>}
+                    </div>
+                </div>
             </div>
 
             {userData && (
               <div className="box" style={{ background: "#1a1a1a", color: "white", border: "1px solid #333" }}>
+                <h2 className="title is-5 has-text-white mb-4">{userData.fullName}</h2>
                 <div className="columns">
-                  <div className="column is-4">
-                    <label className="label is-small has-text-primary">1. STATION</label>
-                    <div className="buttons">
-                      {MACHINES.map((m) => (
-                        <button 
-                          key={m} 
-                          className={`button is-small is-fullwidth ${selectedMachine === m ? "is-primary" : "is-dark"}`} 
-                          onClick={() => setSelectedMachine(m)}
-                          disabled={activeSessions.some(s => s.machine === m) && !manualOverride}
-                        >
-                          {m} {activeSessions.some(s => s.machine === m) ? "(Busy)" : ""}
+                  <div className="column">
+                    <label className="label is-small has-text-grey">STATION</label>
+                    {MACHINES.map((m) => (
+                      <button key={m} className={`button is-small is-fullwidth mb-2 ${selectedMachine === m ? "is-primary" : "is-dark"}`} 
+                        onClick={() => setSelectedMachine(m)} 
+                        disabled={activeSessions.some(s => s.machine === m) && !manualOverride}>
+                        {m}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="column">
+                    <label className="label is-small has-text-grey">TIME</label>
+                    {[0.5, 1, 2].map((h) => {
+                      const isPeak = checkIsPeak();
+                      const priceSource = isPeak ? peakPricing : standardPricing;
+                      const price = priceSource ? priceSource[String(h)] : 0;
+                      return (
+                        <button key={h} className={`button is-small is-fullwidth mb-2 ${pendingTransaction?.hours === h ? 'is-info' : 'is-dark'}`} 
+                          onClick={() => setPendingTransaction({ hours: h, price: price })}>
+                          {h}h - Rs.{price}
                         </button>
-                      ))}
-                    </div>
+                      );
+                    })}
                   </div>
-
-                  <div className="column is-4">
-                    <label className="label is-small has-text-info">2. TIME</label>
-                    <div className="buttons">
-                      {[0.5, 1, 2].map((h) => {
-                        const rate = getRate(h);
-                        return (
-                          <button key={h} className={`button is-small is-fullwidth ${pendingTransaction?.hours === h ? 'is-info' : 'is-dark'}`} onClick={() => setPendingTransaction({ hours: h, price: rate })}>
-                            {h === 0.5 ? "30m" : h + "h"} - Rs.{rate}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  <div className="column is-4">
-                    <label className="label is-small has-text-danger">3. COUPON</label>
+                  <div className="column">
+                    <label className="label is-small has-text-grey">SESSION RECORD</label>
+                    <input className="input is-small is-dark mb-2" placeholder="Lap Time" value={lapTime} onChange={(e) => setLapTime(e.target.value)} />
+                    <label className="label is-small has-text-grey">COUPON</label>
                     <div className="field has-addons">
-                      <div className="control is-expanded"><input className="input is-small is-dark" type="text" value={couponCode} onChange={(e) => setCouponCode(e.target.value)} /></div>
+                      <div className="control is-expanded"><input className="input is-small is-dark" value={couponCode} onChange={(e) => setCouponCode(e.target.value)} /></div>
                       <div className="control"><button className="button is-danger is-small" onClick={applyCoupon}>Apply</button></div>
                     </div>
-                    {appliedCoupon && <p className="help is-success">{appliedCoupon.discount}% Off Applied!</p>}
                   </div>
                 </div>
 
                 {pendingTransaction && (
-                  <div className="notification mt-4 is-dark" style={{ border: isFull ? "2px solid #ff3860" : "2px solid #00d1b2" }}>
-                    {isFull ? (
-                      <div className="has-text-centered">
-                        <p className="has-text-danger mb-2"><b>STORE AT FULL CAPACITY</b></p>
-                        <p className="is-size-7">Use 'Manual' toggle to override</p>
-                      </div>
-                    ) : (
-                      <>
-                        <p className="is-size-3"><strong>Final: Rs. {calculateFinalTotal()}</strong></p>
-                        <div className="buttons mt-2">
-                          <button className={`button is-success is-fullwidth ${isUpdating ? 'is-loading' : ''}`} onClick={() => confirmPayment("CASH")}>Pay Cash</button>
-                          <button className={`button is-info is-fullwidth ${isUpdating ? 'is-loading' : ''}`} onClick={() => confirmPayment("CARD")}>Pay Card</button>
-                        </div>
-                      </>
-                    )}
+                  <div className="notification mt-4 is-dark" style={{ border: "1px solid #00d1b2" }}>
+                    <p className="title is-3 has-text-white">Rs. {calculateFinalTotal()}</p>
+                    <div className="buttons">
+                      <button className={`button is-success is-fullwidth ${isUpdating ? 'is-loading' : ''}`} onClick={() => confirmPayment("CASH")}>CASH</button>
+                      <button className={`button is-info is-fullwidth ${isUpdating ? 'is-loading' : ''}`} onClick={() => confirmPayment("CARD")}>CARD</button>
+                    </div>
                   </div>
                 )}
               </div>
@@ -337,13 +345,8 @@ const AdminPanel = () => {
       <style>{`
         @media print {
           body * { visibility: hidden; }
-          #receipt-print, #receipt-print * { visibility: visible; display: block !important; }
-          #receipt-print { position: absolute; left: 0; top: 0; width: 100%; }
-        }
-        .is-extremely-small {
-          height: 20px;
-          padding: 0 8px;
-          font-size: 10px;
+          #receipt-print { display: block !important; visibility: visible; position: absolute; left: 0; top: 0; }
+          #receipt-print * { visibility: visible; }
         }
       `}</style>
     </div>
