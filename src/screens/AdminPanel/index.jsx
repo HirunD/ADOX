@@ -11,6 +11,7 @@ import {
   where,
   getDocs,
   onSnapshot,
+  setDoc, // Added for guest creation
 } from "firebase/firestore";
 
 const AdminPanel = () => {
@@ -46,15 +47,11 @@ const AdminPanel = () => {
 
   // --- PEAK DETECTION LOGIC ---
   const checkIsPeak = () => {
-    // 1. Check Automatic Time Rules
     const now = new Date();
     const day = now.getDay(); 
     const hour = now.getHours();
     const autoPeak = (day === 0 || day === 6 || hour >= 18);
-
-    // 2. Check Manual Firestore Override (from the 'pricing' doc)
     const manualPeak = standardPricing?.isPeak === true;
-
     return autoPeak || manualPeak;
   };
 
@@ -95,7 +92,7 @@ const AdminPanel = () => {
       setOccupiedCount(active.length);
     });
     return () => unsubscribe();
-  }, [standardPricing]); // Re-run when pricing doc updates
+  }, [standardPricing]);
 
   // --- CAMERA LOGIC ---
   const handleScan = async (result) => {
@@ -124,6 +121,19 @@ const AdminPanel = () => {
     }
     return () => scannerRef.current?.destroy();
   }, [isAdmin]);
+
+  // --- NEW GUEST BOOKING LOGIC ---
+  const startGuestBooking = () => {
+    setUserData({
+      fullName: "Guest Player",
+      uid: "GUEST_" + Date.now(),
+      phone: "N/A",
+      isGuest: true
+    });
+    setPendingTransaction(null);
+    setAppliedCoupon(null);
+    setLapTime("");
+  };
 
   const applyCoupon = async () => {
     if (!couponCode) return;
@@ -182,17 +192,29 @@ const AdminPanel = () => {
     setReceiptData(dataForReceipt);
 
     try {
-      await updateDoc(doc(db, "users", userData.uid), {
-        sessions: arrayUnion({
-          startTime: new Date().toISOString(),
-          duration: pendingTransaction.hours,
-          amountPaid: finalAmount,
-          method: method,
-          machine: selectedMachine,
-          bestLap: lapTime || null,
-          isPeak: isPeakNow
-        }),
-      });
+      const sessionData = {
+        startTime: new Date().toISOString(),
+        duration: pendingTransaction.hours,
+        amountPaid: finalAmount,
+        method: method,
+        machine: selectedMachine,
+        bestLap: lapTime || null,
+        isPeak: isPeakNow
+      };
+
+      if (userData.isGuest) {
+        // Create a record in guests collection
+        await setDoc(doc(db, "guests", userData.uid), {
+          ...userData,
+          session: sessionData,
+          createdAt: new Date().toISOString()
+        });
+      } else {
+        // Update existing user
+        await updateDoc(doc(db, "users", userData.uid), {
+          sessions: arrayUnion(sessionData),
+        });
+      }
 
       setTimeout(() => {
         window.print();
@@ -275,22 +297,55 @@ const AdminPanel = () => {
 
           <div className="column is-8">
             <div className="box mb-4" style={{ background: "#1a1a1a", border: "1px solid #333" }}>
-                <div className="is-flex is-justify-content-space-between is-align-items-center">
-                    <form onSubmit={handlePhoneSearch} className="field has-addons mb-0" style={{ flex: 1 }}>
-                        <div className="control is-expanded"><input className="input is-dark" type="text" placeholder="Phone..." value={searchPhone} onChange={(e) => setSearchPhone(e.target.value)} /></div>
-                        <div className="control"><button type="submit" className="button is-primary">Find</button></div>
-                    </form>
-                    <div className="ml-4">
-                        {checkIsPeak() ? 
-                        <span className="tag is-danger is-medium">PEAK RATES ACTIVE</span> : 
-                        <span className="tag is-success is-medium">NORMAL RATES</span>}
-                    </div>
+    <div className="columns is-vcentered is-mobile is-multiline">
+        {/* SEARCH BAR */}
+        <div className="column is-12-mobile is-7-tablet">
+            <form onSubmit={handlePhoneSearch} className="field has-addons mb-0">
+                <div className="control is-expanded">
+                    <input 
+                        className="input is-dark" 
+                        type="text" 
+                        placeholder="Phone..." 
+                        value={searchPhone} 
+                        onChange={(e) => setSearchPhone(e.target.value)} 
+                    />
+                </div>
+                <div className="control">
+                    <button type="submit" className="button is-primary">Find</button>
+                </div>
+            </form>
+        </div>
+
+        {/* GUEST BUTTON & PEAK STATUS - MATCHED SIZES */}
+        <div className="column is-12-mobile is-5-tablet">
+            <div className="is-flex is-justify-content-end is-align-items-center">
+                <button 
+                    className="button is-warning is-small has-text-weight-bold mr-3" 
+                    onClick={startGuestBooking}
+                    style={{ height: '32px', borderRadius: '4px' }}
+                >
+                    👤 GUEST
+                </button>
+                
+                <div>
+                    {checkIsPeak() ? 
+                    <span className="tag is-danger is-medium has-text-weight-bold" style={{ height: '32px' }}>PEAK ACTIVE</span> : 
+                    <span className="tag is-success is-medium has-text-weight-bold" style={{ height: '32px' }}>NORMAL</span>}
                 </div>
             </div>
+        </div>
+    </div>
+</div>
 
             {userData && (
-              <div className="box" style={{ background: "#1a1a1a", color: "white", border: "1px solid #333" }}>
-                <h2 className="title is-5 has-text-white mb-4">{userData.fullName}</h2>
+              <div className="box" style={{ background: "#1a1a1a", color: "white", border: "1px solid #00d1b2" }}>
+                <div className="is-flex is-justify-content-space-between mb-4">
+                    <h2 className="title is-5 has-text-white">
+                        {userData.fullName} {userData.isGuest && <span className="tag is-warning ml-2">GUEST</span>}
+                    </h2>
+                    <button className="delete" onClick={() => setUserData(null)}></button>
+                </div>
+                
                 <div className="columns">
                   <div className="column">
                     <label className="label is-small has-text-grey">STATION</label>
