@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { BrowserRouter, Routes, Route } from "react-router";
+import { BrowserRouter, Routes, Route } from "react-router-dom";
 import AOS from "aos";
 import AboutPage from "./screens/AboutPage";
 import HomePage from "./screens/HomePage";
@@ -45,8 +45,8 @@ const App = () => {
             <div className={`app-content ${!isLoading ? "content-visible" : ""}`}>
                 <BrowserRouter>
                     <Routes>
-                        {/* <Route path="/" element={<ComingSoon />} /> */}
-                        <Route path="/hhhh" element={<HomePage />} />
+                        {/* <Route path="/" hhhhelement={<ComingSoon />} /> */}
+                        <Route path="/" element={<HomePage />} />
                         <Route path="/signup" element={<SignUpPage />} />
                         <Route path="/login" element={<LoginPage />} />
                         <Route path="/admin" element={<AdminPanel />} />
