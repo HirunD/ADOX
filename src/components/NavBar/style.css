@@ -1,34 +1,25 @@
-/* Glassmorphism Effect */
 .glass-nav {
-    background: rgba(5, 5, 5, 0.6) !important; /* Dark tint */
-    backdrop-filter: blur(15px) !important;    /* Modern blur */
+    background: rgba(5, 5, 5, 0.4) !important; /* Slightly more transparent for a cleaner look */
+    backdrop-filter: blur(15px) !important;
     -webkit-backdrop-filter: blur(15px);
-    border-bottom: 1px solid rgba(0, 209, 178, 0.2); /* Subtle teal border */
-    transition: all 0.3s ease;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05); /* Very subtle edge */
+    height: 65px;
+    display: flex;
+    align-items: center;
 }
 
-/* Make sure links look good on dark background */
-.navbar-item {
-    color: #eee !important;
-    font-size: 0.9rem;
-    letter-spacing: 1px;
-    font-weight: 500;
+/* Ensures no white backgrounds or weird borders from Bulma */
+.navbar, .navbar-brand {
+    background: transparent !important;
 }
 
-.navbar-item:hover {
-    background-color: transparent !important;
-    color: #00d1b2 !important; /* Teal hover */
+.navbar-item img {
+    max-height: 40px !important;
 }
 
-/* Burger Menu (Mobile) */
-.navbar-burger {
-    color: #00d1b2 !important;
-}
-
-/* Mobile Menu background */
 @media screen and (max-width: 1023px) {
-    .navbar-menu {
-        background-color: rgba(10, 10, 10, 0.95) !important;
-        border-bottom: 1px solid #00d1b2;
+    .container {
+        display: flex;
+        padding-left: 1rem; /* Padding for mobile screens */
     }
 }

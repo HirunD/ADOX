@@ -13,7 +13,9 @@ const ComingSoon = () => {
 
       setTimeLeft({
         days: Math.floor(distance / (1000 * 60 * 60 * 24)),
-        hours: Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60)),
+        hours: Math.floor(
+          (distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60)
+        ),
         minutes: Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60)),
         seconds: Math.floor((distance % (1000 * 60)) / 1000),
       });
@@ -24,47 +26,63 @@ const ComingSoon = () => {
 
   const handleNotify = (e) => {
     e.preventDefault();
-    const adminNumber = "947XXXXXXXX"; 
+    const adminNumber = "947XXXXXXXX";
     const message = `Hi Adox Gaming! Notify me when you open! My phone: ${phone}`;
-    const whatsappUrl = `https://wa.me/${adminNumber}?text=${encodeURIComponent(message)}`;
+    const whatsappUrl = `https://wa.me/${adminNumber}?text=${encodeURIComponent(
+      message
+    )}`;
     window.open(whatsappUrl, "_blank");
   };
 
   return (
-    <div className="hero is-fullheight" style={{ background: '#050505', color: '#fff', overflow: 'hidden', position: 'relative' }}>
-      
+    <div
+      className="hero is-fullheight"
+      style={{
+        background: "#050505",
+        color: "#fff",
+        overflow: "hidden",
+        position: "relative",
+      }}
+    >
       {/* ANIMATED BACKGROUND GLOWS */}
       <div className="bg-glow"></div>
 
       <div className="hero-body" style={{ zIndex: 2 }}>
         <div className="container has-text-centered">
-          
           {/* LOGO SECTION */}
           <div className="mb-6">
-            <img 
-              src="/logo.png" 
-              alt="Adox Gaming Logo" 
+            <img
+              src="/logo.png"
+              alt="Adox Gaming Logo"
               className="logo-animation"
-              style={{ maxWidth: '350px', width: '80%', height: 'auto' }} 
+              style={{ maxWidth: "350px", width: "80%", height: "auto" }}
             />
           </div>
-          
-          <h2 className="subtitle is-4 has-text-white mb-6" style={{ letterSpacing: '4px', fontWeight: '300', opacity: 0.8 }}>
-            REDEFINING THE <span style={{ color: '#00d1b2', fontWeight: 'bold' }}>ARENA</span>
+
+          <h2
+            className="subtitle is-4 has-text-white mb-6"
+            style={{ letterSpacing: "4px", fontWeight: "300", opacity: 0.8 }}
+          >
+            REDEFINING THE{" "}
+            <span style={{ color: "#00d1b2", fontWeight: "bold" }}>ARENA</span>
           </h2>
 
           {/* COUNTDOWN GRID */}
           <div className="columns is-mobile is-centered mb-6">
             {[
-              { label: 'DAYS', value: timeLeft.days },
-              { label: 'HOURS', value: timeLeft.hours },
-              { label: 'MINS', value: timeLeft.minutes },
-              { label: 'SECS', value: timeLeft.seconds }
+              { label: "DAYS", value: timeLeft.days },
+              { label: "HOURS", value: timeLeft.hours },
+              { label: "MINS", value: timeLeft.minutes },
+              { label: "SECS", value: timeLeft.seconds },
             ].map((item, idx) => (
               <div key={idx} className="column is-narrow">
                 <div className="countdown-box">
-                  <p className="title is-2 has-text-white mb-0">{item.value || '0'}</p>
-                  <p className="is-size-7 has-text-primary has-text-weight-bold">{item.label}</p>
+                  <p className="title is-2 has-text-white mb-0">
+                    {item.value || "0"}
+                  </p>
+                  <p className="is-size-7 has-text-primary has-text-weight-bold">
+                    {item.label}
+                  </p>
                 </div>
               </div>
             ))}
@@ -74,50 +92,70 @@ const ComingSoon = () => {
             {/* PRICING CARD */}
             <div className="column is-4-tablet is-10-mobile">
               <div className="pricing-card">
-                <p className="has-text-grey-light is-size-7 mb-4" style={{ letterSpacing: '2px' }}>LAUNCH RATES</p>
+                <p
+                  className="has-text-grey-light is-size-7 mb-4"
+                  style={{ letterSpacing: "2px" }}
+                >
+                  LAUNCH RATES
+                </p>
                 <div className="is-flex is-justify-content-space-between mb-3 px-4">
-                  <span className="has-text-grey">0.5 Hour</span> 
-                  <span className="has-text-white has-text-weight-bold">Rs. 200</span>
+                  <span className="has-text-grey">0.5 Hour</span>
+                  <span className="has-text-white has-text-weight-bold">
+                    Rs. 500
+                  </span>
                 </div>
                 <div className="price-divider"></div>
                 <div className="is-flex is-justify-content-space-between mb-3 px-4">
-                  <span className="has-text-grey">1.0 Hour</span> 
-                  <span className="has-text-white has-text-weight-bold">Rs. 350</span>
+                  <span className="has-text-grey">1.0 Hour</span>
+                  <span className="has-text-white has-text-weight-bold">
+                    Rs. 800
+                  </span>
                 </div>
                 <div className="price-divider"></div>
                 <div className="is-flex is-justify-content-space-between px-4">
-                  <span className="has-text-grey">2.0 Hours</span> 
-                  <span className="has-text-white has-text-weight-bold">Rs. 600</span>
+                  <span className="has-text-grey">2.0 Hours</span>
+                  <span className="has-text-white has-text-weight-bold">
+                    Rs. 1500
+                  </span>
                 </div>
               </div>
             </div>
 
-            {/* NOTIFY BOX */}
-            {/* <div className="column is-4-tablet is-10-mobile">
-              <div className="notify-card">
-                <p className="has-text-grey-light is-size-7 mb-4" style={{ letterSpacing: '2px' }}>GET EARLY ACCESS</p>
-                <form onSubmit={handleNotify}>
-                  <div className="field">
-                    <div className="control">
-                      <input 
-                        className="input is-medium custom-input" 
-                        type="tel" 
-                        placeholder="Enter Phone Number" 
-                        value={phone} 
-                        onChange={(e) => setPhone(e.target.value)} 
-                        required 
-                      />
-                    </div>
-                  </div>
-                  <button className="button is-primary is-fullwidth is-medium has-text-weight-bold shine-button">
-                    NOTIFY ME
-                  </button>
-                </form>
-                <p className="is-size-7 has-text-grey mt-4">Opening February 7th, 2026</p>
-              </div>
-            </div> */}
-          </div>
+            {/* NEW: LOCATION CARD */}
+            <div className="column is-4-tablet is-10-mobile">
+              <div
+                className="pricing-card"
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  justifyContent: "center",
+                }}
+              >
+                <p
+                  className="has-text-grey-light is-size-7 mb-4"
+                  style={{ letterSpacing: "2px" }}
+                >
+                  LOCATION
+                </p>
+                <h3 className="title is-4 has-text-white mb-2">GALLE</h3>
+                <p className="has-text-grey is-size-6 mb-5">
+                  Infront of Richmond College Galle<br />
+                  Ready for the next level?
+                </p>
 
+                {/* REPLACE LAT/LONG WITH YOUR ACTUAL ONES */}
+                <a
+                  href="https://www.google.com/maps/search/?api=1&query=6.052164324068312,80.20661741260649"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="button is-outline is-primary is-light is-outlined"
+                  style={{ borderRadius: "10px", border: "1px solid #00d1b2" }}
+                >
+                  📍 VIEW ON MAPS
+                </a>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 

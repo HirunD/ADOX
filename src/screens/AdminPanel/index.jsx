@@ -44,17 +44,26 @@ const AdminPanel = () => {
   const videoRef = useRef(null);
   const scannerRef = useRef(null);
   const audioRef = useRef(new Audio("/success.mp3"));
+const checkIsPeak = () => {
+    // 1. Manual Firestore Override (Highest Priority)
+    if (standardPricing?.isPeak === true) {
+      return true;
+    }
 
-  // --- PEAK DETECTION LOGIC ---
-  const checkIsPeak = () => {
+    // 2. Fallback to Automatic Time Rules (1:00 PM - 3:30 PM)
     const now = new Date();
-    const day = now.getDay(); 
     const hour = now.getHours();
-    const autoPeak = (day === 0 || day === 6 || hour >= 18);
-    const manualPeak = standardPricing?.isPeak === true;
-    return autoPeak || manualPeak;
-  };
+    const minutes = now.getMinutes();
 
+    // Calculate "Total Minutes" from the start of the day to make comparison easy
+    // 1:00 PM is 13 * 60 = 780 minutes
+    // 3:30 PM is (15 * 60) + 30 = 930 minutes
+    const currentTotalMinutes = (hour * 60) + minutes;
+
+    const isAutoPeakTime = (currentTotalMinutes >= 780 && currentTotalMinutes <= 930);
+
+    return isAutoPeakTime;
+  };
   // --- DATA LISTENERS ---
   useEffect(() => {
     const unsubStd = onSnapshot(doc(db, "settings", "pricing"), (docSnap) => {
