@@ -14,23 +14,25 @@ const AdminPricing = () => {
         const peakDocRef = doc(db, "settings", "peak");
 
         // 1. Fetch Standard Pricing (handles flat structure)
-        const unsubStandard = onSnapshot(standardDocRef, (snap) => {
-            if (snap.exists()) {
-                const rawData = snap.data();
-                const isPeakVal = rawData.isPeak ?? false;
-                
-                // Filter: Take everything EXCEPT the 'isPeak' boolean
-                const standardOnly = {};
-                Object.keys(rawData).forEach(key => {
-                    if (key !== 'isPeak') {
-                        standardOnly[key] = rawData[key];
-                    }
-                });
-                
-                setConfig(prev => ({ ...prev, isPeak: isPeakVal, standard: standardOnly }));
-                setEditConfig(prev => ({ ...prev, isPeak: isPeakVal, standard: standardOnly }));
-            }
-        });
+      // ... inside your useEffect for standardDocRef
+const unsubStandard = onSnapshot(standardDocRef, (snap) => {
+    if (snap.exists()) {
+        const data = snap.data();
+        // Look for the SPECIFIC map name in your Firestore
+        const standardRates = data.standard_pricing || {}; 
+        
+        setConfig(prev => ({ 
+            ...prev, 
+            isPeak: data.isPeak ?? false, 
+            standard: standardRates 
+        }));
+        setEditConfig(prev => ({ 
+            ...prev, 
+            isPeak: data.isPeak ?? false, 
+            standard: standardRates 
+        }));
+    }
+});
 
         // 2. Fetch Peak Pricing (separate doc)
         const unsubPeak = onSnapshot(peakDocRef, (snap) => {
