@@ -45,8 +45,8 @@ const App = () => {
             <div className={`app-content ${!isLoading ? "content-visible" : ""}`}>
                 <BrowserRouter>
                     <Routes>
-                        {/* <Route path="/" hhhhelement={<ComingSoon />} /> */}
-                        <Route path="/" element={<HomePage />} />
+                        <Route path="/" element={<ComingSoon />} />
+                        <Route path="/home" element={<HomePage />} />
                         <Route path="/signup" element={<SignUpPage />} />
                         <Route path="/login" element={<LoginPage />} />
                         <Route path="/admin" element={<AdminPanel />} />
