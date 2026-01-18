@@ -11,7 +11,8 @@ import {
   where,
   getDocs,
   onSnapshot,
-  setDoc, // Added for guest creation
+  setDoc,
+  deleteDoc, // Added for clearing reservations
 } from "firebase/firestore";
 
 const AdminPanel = () => {
@@ -32,6 +33,7 @@ const AdminPanel = () => {
   
   const [receiptData, setReceiptData] = useState(null);
   const [activeSessions, setActiveSessions] = useState([]);
+  const [reservations, setReservations] = useState([]); // New state for bookings
   const [occupiedCount, setOccupiedCount] = useState(0);
   const [manualOverride, setManualOverride] = useState(false);
   
@@ -44,26 +46,14 @@ const AdminPanel = () => {
   const videoRef = useRef(null);
   const scannerRef = useRef(null);
   const audioRef = useRef(new Audio("/success.mp3"));
-const checkIsPeak = () => {
-    // 1. Manual Firestore Override (Highest Priority)
-    if (standardPricing?.isPeak === true) {
-      return true;
-    }
 
-    // 2. Fallback to Automatic Time Rules (1:00 PM - 3:30 PM)
+  const checkIsPeak = () => {
+    if (standardPricing?.isPeak === true) return true;
     const now = new Date();
-    const hour = now.getHours();
-    const minutes = now.getMinutes();
-
-    // Calculate "Total Minutes" from the start of the day to make comparison easy
-    // 1:00 PM is 13 * 60 = 780 minutes
-    // 3:30 PM is (15 * 60) + 30 = 930 minutes
-    const currentTotalMinutes = (hour * 60) + minutes;
-
-    const isAutoPeakTime = (currentTotalMinutes >= 780 && currentTotalMinutes <= 930);
-
-    return isAutoPeakTime;
+    const currentTotalMinutes = (now.getHours() * 60) + now.getMinutes();
+    return (currentTotalMinutes >= 780 && currentTotalMinutes <= 930);
   };
+
   // --- DATA LISTENERS ---
   useEffect(() => {
     const unsubStd = onSnapshot(doc(db, "settings", "pricing"), (docSnap) => {
@@ -72,7 +62,17 @@ const checkIsPeak = () => {
     const unsubPeak = onSnapshot(doc(db, "settings", "peak"), (docSnap) => {
       if (docSnap.exists()) setPeakPricing(docSnap.data());
     });
-    return () => { unsubStd(); unsubPeak(); };
+    
+    // Listen for Today's Reservations
+    const today = new Date().toISOString().split('T')[0];
+    const qRes = query(collection(db, "reservations"), where("date", "==", today));
+    const unsubRes = onSnapshot(qRes, (snap) => {
+        const resList = [];
+        snap.forEach(d => resList.push({ id: d.id, ...d.data() }));
+        setReservations(resList.sort((a,b) => a.startTime.localeCompare(b.startTime)));
+    });
+
+    return () => { unsubStd(); unsubPeak(); unsubRes(); };
   }, []);
 
   useEffect(() => {
@@ -103,6 +103,22 @@ const checkIsPeak = () => {
     return () => unsubscribe();
   }, [standardPricing]);
 
+  // --- RESERVATION CHECK-IN LOGIC ---
+  const handleCheckIn = (res) => {
+    setUserData({
+        fullName: res.customerName,
+        phone: res.phone,
+        uid: res.userId === "GUEST" ? "GUEST_" + Date.now() : res.userId,
+        isGuest: res.userId === "GUEST" || !res.userId
+    });
+    setSelectedMachine(res.machine);
+    const isPeak = checkIsPeak();
+    const priceSource = isPeak ? peakPricing : standardPricing;
+    const price = priceSource ? priceSource[String(res.duration)] : 0;
+    setPendingTransaction({ hours: parseFloat(res.duration), price: price });
+    // Note: We delete the reservation only after successful confirmPayment
+  };
+
   // --- CAMERA LOGIC ---
   const handleScan = async (result) => {
     if (isLocked || !result) return;
@@ -131,14 +147,8 @@ const checkIsPeak = () => {
     return () => scannerRef.current?.destroy();
   }, [isAdmin]);
 
-  // --- NEW GUEST BOOKING LOGIC ---
   const startGuestBooking = () => {
-    setUserData({
-      fullName: "Guest Player",
-      uid: "GUEST_" + Date.now(),
-      phone: "N/A",
-      isGuest: true
-    });
+    setUserData({ fullName: "Guest Player", uid: "GUEST_" + Date.now(), phone: "N/A", isGuest: true });
     setPendingTransaction(null);
     setAppliedCoupon(null);
     setLapTime("");
@@ -161,9 +171,7 @@ const checkIsPeak = () => {
   const calculateFinalTotal = () => {
     if (!pendingTransaction) return 0;
     const base = Number(pendingTransaction.price);
-    if (appliedCoupon?.discount) {
-      return base - (base * Number(appliedCoupon.discount)) / 100;
-    }
+    if (appliedCoupon?.discount) return base - (base * Number(appliedCoupon.discount)) / 100;
     return base;
   };
 
@@ -212,28 +220,19 @@ const checkIsPeak = () => {
       };
 
       if (userData.isGuest) {
-        // Create a record in guests collection
-        await setDoc(doc(db, "guests", userData.uid), {
-          ...userData,
-          session: sessionData,
-          createdAt: new Date().toISOString()
-        });
+        await setDoc(doc(db, "guests", userData.uid), { ...userData, session: sessionData, createdAt: new Date().toISOString() });
       } else {
-        // Update existing user
-        await updateDoc(doc(db, "users", userData.uid), {
-          sessions: arrayUnion(sessionData),
-        });
+        await updateDoc(doc(db, "users", userData.uid), { sessions: arrayUnion(sessionData) });
       }
+
+      // If this was a reservation, find it and delete it now that it's paid
+      const resToClear = reservations.find(r => r.phone === userData.phone && r.machine === selectedMachine);
+      if (resToClear) await deleteDoc(doc(db, "reservations", resToClear.id));
 
       setTimeout(() => {
         window.print();
-        setUserData(null);
-        setPendingTransaction(null);
-        setAppliedCoupon(null);
-        setCouponCode("");
-        setLapTime("");
-        setSelectedMachine("");
-        setReceiptData(null);
+        setUserData(null); setPendingTransaction(null); setAppliedCoupon(null);
+        setCouponCode(""); setLapTime(""); setSelectedMachine(""); setReceiptData(null);
         setIsUpdating(false);
       }, 800);
     } catch (e) {
@@ -251,7 +250,7 @@ const checkIsPeak = () => {
             if (password === import.meta.env.VITE_ADMIN_PASSWORD) setIsAdmin(true);
           }}>
           <h1 className="title has-text-white">Admin Login</h1>
-          <input className="input is-dark mb-3" type="password" placeholder="Access Key" onChange={(e) => setPassword(e.target.value)} />
+          <input className="input is-dark mb-3" type="password" inputMode="numeric" pattern="[0-9]*" placeholder="Access Key" value={password} onChange={(e) => setPassword(e.target.value)} />
           <button className="button is-primary is-fullwidth">Login</button>
         </form>
       </div>
@@ -260,7 +259,6 @@ const checkIsPeak = () => {
 
   return (
     <div className="section" style={{ background: "#050505", minHeight: "100vh" }}>
-      
       <div id="receipt-print" style={{ display: 'none' }}>
         {receiptData && (
           <div style={{ width: "75mm", padding: "10px", color: "black", fontFamily: "monospace" }}>
@@ -281,14 +279,11 @@ const checkIsPeak = () => {
       <div className="container">
         <div className="columns">
           <div className="column is-4">
+            {/* ACTIVE SESSIONS */}
             <div className="box mb-4" style={{ background: "#1a1a1a", border: "1px solid #333" }}>
               <div className="is-flex is-justify-content-space-between is-align-items-center mb-2">
                 <h3 className="subtitle is-6 has-text-white mb-0">Active ({occupiedCount}/{TOTAL_CAPACITY})</h3>
-                <button 
-                  className={`button is-small ${manualOverride ? 'is-danger' : 'is-dark'}`} 
-                  onClick={() => setManualOverride(!manualOverride)}
-                  style={{ height: '24px', fontSize: '10px' }}
-                >
+                <button className={`button is-small ${manualOverride ? 'is-danger' : 'is-dark'}`} onClick={() => setManualOverride(!manualOverride)} style={{ height: '24px', fontSize: '10px' }}>
                   {manualOverride ? 'OVERRIDE ON' : 'AUTO LOCK'}
                 </button>
               </div>
@@ -299,6 +294,23 @@ const checkIsPeak = () => {
                 </div>
               ))}
             </div>
+
+            {/* NEW: PENDING RESERVATIONS CHECK-IN */}
+            <div className="box mb-4" style={{ background: "#1a1a1a", border: "1px solid #ffdd57" }}>
+                <h3 className="subtitle is-6 has-text-warning mb-2">Today's Bookings</h3>
+                {reservations.length > 0 ? reservations.map((res, i) => (
+                    <div key={i} className="mb-2 p-2" style={{ background: "#222", borderRadius: "8px" }}>
+                        <div className="is-flex is-justify-content-between is-align-items-center">
+                            <div>
+                                <p className="is-size-7 has-text-white"><b>{res.startTime}</b>: {res.customerName}</p>
+                                <p className="is-size-7 has-text-grey">{res.machine}</p>
+                            </div>
+                            <button className="button is-warning is-small" onClick={() => handleCheckIn(res)} style={{ height: '28px', fontSize: '10px', fontWeight: 'bold' }}>CHECK-IN</button>
+                        </div>
+                    </div>
+                )) : <p className="is-size-7 has-text-grey">No bookings for today.</p>}
+            </div>
+
             <div style={{ position: "relative", borderRadius: "10px", overflow: "hidden", border: "2px solid #333" }}>
                 <video ref={videoRef} style={{ width: "100%", display: "block", background: "#000" }}></video>
             </div>
@@ -306,52 +318,28 @@ const checkIsPeak = () => {
 
           <div className="column is-8">
             <div className="box mb-4" style={{ background: "#1a1a1a", border: "1px solid #333" }}>
-    <div className="columns is-vcentered is-mobile is-multiline">
-        {/* SEARCH BAR */}
-        <div className="column is-12-mobile is-7-tablet">
-            <form onSubmit={handlePhoneSearch} className="field has-addons mb-0">
-                <div className="control is-expanded">
-                    <input 
-                        className="input is-dark" 
-                        type="text" 
-                        placeholder="Phone..." 
-                        value={searchPhone} 
-                        onChange={(e) => setSearchPhone(e.target.value)} 
-                    />
+              <div className="columns is-vcentered is-mobile is-multiline">
+                <div className="column is-12-mobile is-7-tablet">
+                  <form onSubmit={handlePhoneSearch} className="field has-addons mb-0">
+                    <div className="control is-expanded">
+                      <input className="input is-dark" type="tel" inputMode="numeric" pattern="[0-9]*" placeholder="Phone..." value={searchPhone} onChange={(e) => setSearchPhone(e.target.value)} />
+                    </div>
+                    <div className="control"><button type="submit" className="button is-primary">Find</button></div>
+                  </form>
                 </div>
-                <div className="control">
-                    <button type="submit" className="button is-primary">Find</button>
+                <div className="column is-12-mobile is-5-tablet">
+                  <div className="is-flex is-justify-content-end is-align-items-center">
+                    <button className="button is-warning is-small has-text-weight-bold mr-3" onClick={startGuestBooking} style={{ height: '32px' }}>👤 GUEST</button>
+                    <div>{checkIsPeak() ? <span className="tag is-danger is-medium has-text-weight-bold">PEAK ACTIVE</span> : <span className="tag is-success is-medium has-text-weight-bold">NORMAL</span>}</div>
+                  </div>
                 </div>
-            </form>
-        </div>
-
-        {/* GUEST BUTTON & PEAK STATUS - MATCHED SIZES */}
-        <div className="column is-12-mobile is-5-tablet">
-            <div className="is-flex is-justify-content-end is-align-items-center">
-                <button 
-                    className="button is-warning is-small has-text-weight-bold mr-3" 
-                    onClick={startGuestBooking}
-                    style={{ height: '32px', borderRadius: '4px' }}
-                >
-                    👤 GUEST
-                </button>
-                
-                <div>
-                    {checkIsPeak() ? 
-                    <span className="tag is-danger is-medium has-text-weight-bold" style={{ height: '32px' }}>PEAK ACTIVE</span> : 
-                    <span className="tag is-success is-medium has-text-weight-bold" style={{ height: '32px' }}>NORMAL</span>}
-                </div>
+              </div>
             </div>
-        </div>
-    </div>
-</div>
 
             {userData && (
               <div className="box" style={{ background: "#1a1a1a", color: "white", border: "1px solid #00d1b2" }}>
                 <div className="is-flex is-justify-content-space-between mb-4">
-                    <h2 className="title is-5 has-text-white">
-                        {userData.fullName} {userData.isGuest && <span className="tag is-warning ml-2">GUEST</span>}
-                    </h2>
+                    <h2 className="title is-5 has-text-white">{userData.fullName} {userData.isGuest && <span className="tag is-warning ml-2">GUEST</span>}</h2>
                     <button className="delete" onClick={() => setUserData(null)}></button>
                 </div>
                 
@@ -360,10 +348,7 @@ const checkIsPeak = () => {
                     <label className="label is-small has-text-grey">STATION</label>
                     {MACHINES.map((m) => (
                       <button key={m} className={`button is-small is-fullwidth mb-2 ${selectedMachine === m ? "is-primary" : "is-dark"}`} 
-                        onClick={() => setSelectedMachine(m)} 
-                        disabled={activeSessions.some(s => s.machine === m) && !manualOverride}>
-                        {m}
-                      </button>
+                        onClick={() => setSelectedMachine(m)} disabled={activeSessions.some(s => s.machine === m) && !manualOverride}>{m}</button>
                     ))}
                   </div>
                   <div className="column">
@@ -374,9 +359,7 @@ const checkIsPeak = () => {
                       const price = priceSource ? priceSource[String(h)] : 0;
                       return (
                         <button key={h} className={`button is-small is-fullwidth mb-2 ${pendingTransaction?.hours === h ? 'is-info' : 'is-dark'}`} 
-                          onClick={() => setPendingTransaction({ hours: h, price: price })}>
-                          {h}h - Rs.{price}
-                        </button>
+                          onClick={() => setPendingTransaction({ hours: h, price: price })}>{h}h - Rs.{price}</button>
                       );
                     })}
                   </div>

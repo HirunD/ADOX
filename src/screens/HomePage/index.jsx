@@ -1,14 +1,13 @@
 import React, { useState, useEffect } from "react";
 import { auth, db } from "../../firebase";
 import { onAuthStateChanged, signOut } from "firebase/auth";
-import { doc, onSnapshot, updateDoc, collection } from "firebase/firestore";
+import { doc, onSnapshot, collection, query, where } from "firebase/firestore";
 import QRCode from "react-qr-code";
 import { Link } from "react-router-dom";
 
 const customStyles = `
   body { background-color: #080808; margin: 0; padding: 0; }
   
-  /* Main scrollable container */
   .scroll-container {
     height: 100vh;
     overflow-y: auto;
@@ -20,7 +19,6 @@ const customStyles = `
 
   .scroll-container::-webkit-scrollbar { display: none; }
 
-  /* Universal Box Styling */
   .interface-box {
     background: rgba(255, 255, 255, 0.03);
     backdrop-filter: blur(10px);
@@ -59,6 +57,12 @@ const customStyles = `
     align-items: center;
     text-decoration: none;
   }
+
+  .booking-row {
+    padding: 8px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+  }
+  .booking-row:last-child { border-bottom: none; }
 `;
 
 const HomePage = () => {
@@ -66,7 +70,11 @@ const HomePage = () => {
     const [userData, setUserData] = useState(null);
     const [points, setPoints] = useState(0);
     const [occupiedMachines, setOccupiedMachines] = useState(0);
-    const [todaySchedule, setTodaySchedule] = useState([]);
+    
+    // Activity States
+    const [activeSession, setActiveSession] = useState(null);
+    const [allReservations, setAllReservations] = useState([]);
+    
     const TOTAL_MACHINES = 3;
 
     useEffect(() => {
@@ -76,33 +84,53 @@ const HomePage = () => {
 
     useEffect(() => {
         if (!user) return;
+
+        // 1. User Profile & Personal Active Session
         const unsubUser = onSnapshot(doc(db, "users", user.uid), (docSnap) => {
             if (docSnap.exists()) {
                 const data = docSnap.data();
                 setUserData(data); 
                 const hrs = (data.sessions || []).reduce((acc, s) => acc + (parseFloat(s.duration) || 0), 0);
                 setPoints(hrs * 2);
+
+                const now = new Date();
+                const live = (data.sessions || []).find(s => {
+                    const start = new Date(s.startTime);
+                    const end = new Date(start.getTime() + (parseFloat(s.duration) * 60 * 60 * 1000));
+                    return now >= start && now < end;
+                });
+                setActiveSession(live || null);
             }
         });
+
+        // 2. Global Reservations (Show to EVERYONE)
+        const today = new Date().toISOString().split('T')[0];
+        const qRes = query(collection(db, "reservations"), where("date", "==", today));
+        const unsubRes = onSnapshot(qRes, (snap) => {
+            const list = [];
+            snap.forEach(d => list.push(d.data()));
+            // Sort by time
+            setAllReservations(list.sort((a,b) => a.startTime.localeCompare(b.startTime)));
+        });
+
+        // 3. Global Occupancy (Live Machine Count)
         const unsubGlobal = onSnapshot(collection(db, "users"), (snapshot) => {
             let activeCount = 0;
-            const schedule = [];
             const now = new Date();
             snapshot.forEach((userDoc) => {
                 const data = userDoc.data();
                 if (data.sessions) {
-                    data.sessions.forEach(session => {
-                        const startTime = new Date(session.startTime);
-                        const endTime = new Date(startTime.getTime() + (parseFloat(session.duration) * 60 * 60 * 1000));
-                        if (now >= startTime && now < endTime) activeCount++;
-                        if (endTime > now) schedule.push({ isMe: user.uid === userDoc.id, start: startTime, end: endTime, machine: session.machine });
+                    data.sessions.forEach(s => {
+                        const start = new Date(s.startTime);
+                        const end = new Date(start.getTime() + (parseFloat(s.duration) * 60 * 60 * 1000));
+                        if (now >= start && now < end) activeCount++;
                     });
                 }
             });
-            setTodaySchedule(schedule.sort((a, b) => a.start - b.start));
             setOccupiedMachines(activeCount > TOTAL_MACHINES ? TOTAL_MACHINES : activeCount);
         });
-        return () => { unsubUser(); unsubGlobal(); };
+
+        return () => { unsubUser(); unsubRes(); unsubGlobal(); };
     }, [user]);
 
     if (!user) return null;
@@ -111,12 +139,11 @@ const HomePage = () => {
         <div className="scroll-container">
             <style>{customStyles}</style>
 
-            {/* TOP LOGO */}
             <div className="has-text-centered mb-5">
                 <img src="/logo.png" alt="Logo" style={{ width: "120px" }} />
             </div>
 
-            {/* USER PROFILE BOX - Now at the top, same size */}
+            {/* USER PROFILE BOX */}
             <div className="interface-box is-flex is-align-items-center is-justify-content-between">
                 <div>
                     <p className="has-text-grey is-size-7 is-uppercase mb-1">Active Pilot</p>
@@ -128,16 +155,7 @@ const HomePage = () => {
                 </figure>
             </div>
 
-            {/* LEADERBOARD BOX */}
-            <Link to="/leaderboard" className="interface-box action-btn" style={{ background: 'linear-gradient(135deg, rgba(0, 209, 178, 0.2), transparent)' }}>
-                <div>
-                    <p className="title is-6 has-text-white mb-1">LEADERBOARD</p>
-                    <p className="is-size-7 has-text-primary">VIEW RANKINGS →</p>
-                </div>
-                <i className="fas fa-trophy fa-lg has-text-white" style={{ opacity: 0.5 }}></i>
-            </Link>
-
-            {/* STATS ROW (SLOTS & POINTS) */}
+            {/* STATS ROW */}
             <div className="stat-grid">
                 <div className="stat-box">
                     <p className="is-size-7 has-text-grey-light mb-1">FREE SLOTS</p>
@@ -149,6 +167,40 @@ const HomePage = () => {
                 </div>
             </div>
 
+            {/* TRACK ACTIVITY BOX (SCHEDULE) */}
+            <div className="interface-box">
+                <p className="is-size-7 has-text-grey is-uppercase mb-3">Today's Schedule</p>
+                
+                {/* 1. Show User's Personal Active Session first if they are playing */}
+                {activeSession && (
+                    <div className="notification is-success is-light p-2 mb-3" style={{ borderRadius: '12px' }}>
+                        <p className="is-size-7 has-text-centered"><b>YOU ARE LIVE ⚡</b> {activeSession.machine}</p>
+                    </div>
+                )}
+
+                {/* 2. Show all reservations so users know when machines are taken */}
+                {allReservations.length > 0 ? (
+                    allReservations.map((res, i) => {
+                        const isMine = userData?.phone === res.phone;
+                        return (
+                            <div key={i} className="is-flex is-justify-content-between is-align-items-center booking-row">
+                                <div>
+                                    <p className={`is-size-7 ${isMine ? 'has-text-primary has-text-weight-bold' : 'has-text-white'}`}>
+                                        {res.startTime} - {isMine ? "Your Booking" : "Reserved"}
+                                    </p>
+                                    <p className="is-size-7 has-text-grey">{res.machine}</p>
+                                </div>
+                                <span className={`tag is-rounded is-small ${isMine ? 'is-primary' : 'is-dark'}`}>
+                                    {res.duration} Hr
+                                </span>
+                            </div>
+                        );
+                    })
+                ) : (
+                    <p className="is-size-7 has-text-grey">No reservations for today. Machines available!</p>
+                )}
+            </div>
+
             {/* MEMBER QR BOX */}
             <div className="interface-box has-text-centered">
                 <p className="is-size-7 has-text-grey is-uppercase mb-3">Identity Pass</p>
@@ -157,29 +209,23 @@ const HomePage = () => {
                 </div>
             </div>
 
-            {/* TRACK ACTIVITY BOX */}
-            <div className="interface-box">
-                <p className="is-size-7 has-text-grey is-uppercase mb-3">Track Activity</p>
-                {todaySchedule.length > 0 ? (
-                    <div className="is-flex is-justify-content-between is-align-items-center">
-                        <p className="is-size-7 has-text-white">Active session running</p>
-                        <span className="tag is-black is-rounded is-small" style={{ border: '1px solid #333' }}>{todaySchedule[0].machine}</span>
-                    </div>
-                ) : (
-                    <p className="is-size-7 has-text-grey">No active bookings</p>
-                )}
-            </div>
+            {/* LEADERBOARD LINK */}
+            <Link to="/leaderboard" className="interface-box action-btn" style={{ background: 'rgba(0, 209, 178, 0.05)' }}>
+                <div>
+                    <p className="title is-6 has-text-white mb-1">Global Rankings</p>
+                    <p className="is-size-7 has-text-primary">Tap to view leaderboard</p>
+                </div>
+                <i className="fas fa-chevron-right has-text-grey"></i>
+            </Link>
 
-            {/* SIGN OUT BOX - Same size and style as others */}
-            <div className="interface-box action-btn" onClick={() => signOut(auth)} style={{ cursor: 'pointer', border: '1px solid rgba(255, 56, 96, 0.3)' }}>
+            {/* SIGN OUT */}
+            <div className="interface-box action-btn" onClick={() => signOut(auth)} style={{ cursor: 'pointer', border: '1px solid rgba(255, 56, 96, 0.2)' }}>
                 <div>
                     <p className="title is-6 has-text-danger mb-1">SIGN OUT</p>
-                    <p className="is-size-7 has-text-danger" style={{ opacity: 0.7 }}>TERMINATE SESSION</p>
                 </div>
-                <i className="fas fa-sign-out-alt fa-lg has-text-danger" style={{ opacity: 0.5 }}></i>
+                <i className="fas fa-sign-out-alt has-text-danger" style={{ opacity: 0.5 }}></i>
             </div>
             
-            {/* Bottom spacer for clean scrolling */}
             <div style={{ height: '40px' }}></div>
         </div>
     );
