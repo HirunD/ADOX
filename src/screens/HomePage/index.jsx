@@ -70,6 +70,7 @@ const HomePage = () => {
     const [userData, setUserData] = useState(null);
     const [points, setPoints] = useState(0);
     const [occupiedMachines, setOccupiedMachines] = useState(0);
+    const [authLoading, setAuthLoading] = useState(true);
     
     // Activity States
     const [activeSession, setActiveSession] = useState(null);
@@ -78,7 +79,10 @@ const HomePage = () => {
     const TOTAL_MACHINES = 3;
 
     useEffect(() => {
-        const unsubscribeAuth = onAuthStateChanged(auth, (u) => setUser(u));
+        const unsubscribeAuth = onAuthStateChanged(auth, (u) => {
+            setUser(u);
+            setAuthLoading(false);
+        });
         return () => unsubscribeAuth();
     }, []);
 
@@ -133,7 +137,32 @@ const HomePage = () => {
         return () => { unsubUser(); unsubRes(); unsubGlobal(); };
     }, [user]);
 
-    if (!user) return null;
+    if (authLoading) {
+        return (
+            <div className="scroll-container">
+                <style>{customStyles}</style>
+                <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
+                    <div className="has-text-centered">
+                        <i className="fas fa-spinner fa-spin has-text-primary" style={{ fontSize: '2rem' }}></i>
+                        <p className="has-text-grey mt-3">Loading...</p>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    if (!user) {
+        return (
+            <div className="scroll-container">
+                <style>{customStyles}</style>
+                <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', flexDirection: 'column', padding: '20px' }}>
+                    <img src="/logo.png" alt="Logo" style={{ width: "120px", marginBottom: '20px' }} />
+                    <p className="has-text-grey mb-4">Please log in to access your dashboard</p>
+                    <Link to="/login" className="button is-primary">Go to Login</Link>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="scroll-container">
