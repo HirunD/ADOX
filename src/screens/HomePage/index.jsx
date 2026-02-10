@@ -1,82 +1,47 @@
 import React, { useState, useEffect } from "react";
 import { auth, db } from "../../firebase";
 import { onAuthStateChanged, signOut } from "firebase/auth";
-import { doc, onSnapshot, collection, query, where } from "firebase/firestore";
+import { doc, onSnapshot, collection, query, where, limit, orderBy, updateDoc } from "firebase/firestore";
 import QRCode from "react-qr-code";
 import { Link } from "react-router-dom";
 
 const customStyles = `
-  body { background-color: #080808; margin: 0; padding: 0; }
-  
-  .scroll-container {
-    height: 100vh;
-    overflow-y: auto;
-    padding: 20px 15px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-  }
-
-  .scroll-container::-webkit-scrollbar { display: none; }
-
+  body { background-color: #080808; margin: 0; padding: 0; font-family: 'Inter', sans-serif; }
+  .scroll-container { min-height: 100vh; padding: 20px 15px; width: 100%; display: block; }
   .interface-box {
     background: rgba(255, 255, 255, 0.03);
     backdrop-filter: blur(10px);
     border: 1px solid rgba(255, 255, 255, 0.08);
     border-radius: 20px;
     width: 100%;
-    max-width: 400px;
-    margin-bottom: 12px;
+    max-width: 450px;
+    margin: 0 auto 12px auto;
     padding: 20px;
     box-sizing: border-box;
   }
-
-  .stat-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 12px;
-    width: 100%;
-    max-width: 400px;
-    margin-bottom: 12px;
-  }
-
-  .stat-box {
-    background: rgba(255, 255, 255, 0.03);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 20px;
-    padding: 15px;
-    text-align: center;
-  }
-
-  .action-btn {
-    width: 100%;
-    border: none;
-    cursor: pointer;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    text-decoration: none;
-  }
-
-  .booking-row {
-    padding: 8px 0;
-    border-bottom: 1px solid rgba(255,255,255,0.05);
-  }
-  .booking-row:last-child { border-bottom: none; }
+  .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; width: 100%; max-width: 450px; margin: 0 auto 12px auto; }
+  .stat-box { background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 20px; padding: 15px; text-align: center; }
+  .live-pulse { width: 8px; height: 8px; background: #00d1b2; border-radius: 50%; display: inline-block; margin-right: 8px; box-shadow: 0 0 8px #00d1b2; animation: pulse 1.5s infinite; }
+  @keyframes pulse { 0% { transform: scale(0.95); opacity: 0.7; } 70% { transform: scale(1.2); opacity: 1; } 100% { transform: scale(0.95); opacity: 0.7; } }
+  .gaming-banner { background: linear-gradient(135deg, #00d1b2 0%, #006b5a 100%); border-radius: 24px; padding: 30px 20px; text-align: center; color: white; margin-bottom: 20px; border: 1px solid rgba(255, 255, 255, 0.1); }
+  
+  /* Avatar Picker Styles */
+  .avatar-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 15px; }
+  .avatar-item { cursor: pointer; border-radius: 50%; border: 2px solid transparent; transition: 0.3s; }
+  .avatar-item.active { border-color: #00d1b2; transform: scale(1.1); }
 `;
 
 const HomePage = () => {
     const [user, setUser] = useState(null);
     const [userData, setUserData] = useState(null);
-    const [points, setPoints] = useState(0);
-    const [occupiedMachines, setOccupiedMachines] = useState(0);
-    const [authLoading, setAuthLoading] = useState(true);
-    
-    // Activity States
-    const [activeSession, setActiveSession] = useState(null);
+    const [livePlayers, setLivePlayers] = useState([]);
+    const [topGamers, setTopGamers] = useState([]);
     const [allReservations, setAllReservations] = useState([]);
+    const [authLoading, setAuthLoading] = useState(true);
+    const [showAvatarPicker, setShowAvatarPicker] = useState(false);
     
-    const TOTAL_MACHINES = 3;
+    const TOTAL_STATIONS = 5;
+    const avatars = ["1.png", "2.png", "3.png", "4.png", "5.png", "6.png"];
 
     useEffect(() => {
         const unsubscribeAuth = onAuthStateChanged(auth, (u) => {
@@ -87,39 +52,15 @@ const HomePage = () => {
     }, []);
 
     useEffect(() => {
-        if (!user) return;
-
-        // 1. User Profile & Personal Active Session
-        const unsubUser = onSnapshot(doc(db, "users", user.uid), (docSnap) => {
-            if (docSnap.exists()) {
-                const data = docSnap.data();
-                setUserData(data); 
-                const hrs = (data.sessions || []).reduce((acc, s) => acc + (parseFloat(s.duration) || 0), 0);
-                setPoints(hrs * 2);
-
-                const now = new Date();
-                const live = (data.sessions || []).find(s => {
-                    const start = new Date(s.startTime);
-                    const end = new Date(start.getTime() + (parseFloat(s.duration) * 60 * 60 * 1000));
-                    return now >= start && now < end;
-                });
-                setActiveSession(live || null);
-            }
+        const qLeader = query(collection(db, "users"), orderBy("totalHours", "desc"), limit(3));
+        const unsubLeader = onSnapshot(qLeader, (snap) => {
+            const gamers = [];
+            snap.forEach(d => gamers.push(d.data()));
+            setTopGamers(gamers);
         });
 
-        // 2. Global Reservations (Show to EVERYONE)
-        const today = new Date().toISOString().split('T')[0];
-        const qRes = query(collection(db, "reservations"), where("date", "==", today));
-        const unsubRes = onSnapshot(qRes, (snap) => {
-            const list = [];
-            snap.forEach(d => list.push(d.data()));
-            // Sort by time
-            setAllReservations(list.sort((a,b) => a.startTime.localeCompare(b.startTime)));
-        });
-
-        // 3. Global Occupancy (Live Machine Count)
         const unsubGlobal = onSnapshot(collection(db, "users"), (snapshot) => {
-            let activeCount = 0;
+            let activeSessions = [];
             const now = new Date();
             snapshot.forEach((userDoc) => {
                 const data = userDoc.data();
@@ -127,135 +68,163 @@ const HomePage = () => {
                     data.sessions.forEach(s => {
                         const start = new Date(s.startTime);
                         const end = new Date(start.getTime() + (parseFloat(s.duration) * 60 * 60 * 1000));
-                        if (now >= start && now < end) activeCount++;
+                        if (now >= start && now < end) {
+                            activeSessions.push({ name: data.fullName.split(' ')[0], machine: s.machine, avatar: data.avatar });
+                        }
                     });
                 }
             });
-            setOccupiedMachines(activeCount > TOTAL_MACHINES ? TOTAL_MACHINES : activeCount);
+            setLivePlayers(activeSessions);
         });
 
-        return () => { unsubUser(); unsubRes(); unsubGlobal(); };
+        const today = new Date().toISOString().split('T')[0];
+        const qRes = query(collection(db, "reservations"), where("date", "==", today));
+        const unsubRes = onSnapshot(qRes, (snap) => {
+            const list = [];
+            snap.forEach(d => list.push(d.data()));
+            setAllReservations(list.sort((a,b) => a.startTime.localeCompare(b.startTime)));
+        });
+
+        if (user) {
+            onSnapshot(doc(db, "users", user.uid), (docSnap) => {
+                if (docSnap.exists()) setUserData(docSnap.data());
+            });
+        }
+
+        return () => { unsubLeader(); unsubGlobal(); unsubRes(); };
     }, [user]);
 
-    if (authLoading) {
-        return (
-            <div className="scroll-container">
-                <style>{customStyles}</style>
-                <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
-                    <div className="has-text-centered">
-                        <i className="fas fa-spinner fa-spin has-text-primary" style={{ fontSize: '2rem' }}></i>
-                        <p className="has-text-grey mt-3">Loading...</p>
-                    </div>
-                </div>
-            </div>
-        );
-    }
+    const changeAvatar = async (img) => {
+        try {
+            await updateDoc(doc(db, "users", user.uid), { avatar: img });
+            setShowAvatarPicker(false);
+        } catch (err) {
+            alert("Error updating avatar");
+        }
+    };
 
-    if (!user) {
-        return (
-            <div className="scroll-container">
-                <style>{customStyles}</style>
-                <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', flexDirection: 'column', padding: '20px' }}>
-                    <img src="/logo.png" alt="Logo" style={{ width: "120px", marginBottom: '20px' }} />
-                    <p className="has-text-grey mb-4">Please log in to access your dashboard</p>
-                    <Link to="/login" className="button is-primary">Go to Login</Link>
-                </div>
-            </div>
-        );
-    }
+    if (authLoading) return <div className="has-text-centered py-6"><i className="fas fa-circle-notch fa-spin has-text-primary"></i></div>;
 
     return (
         <div className="scroll-container">
             <style>{customStyles}</style>
 
             <div className="has-text-centered mb-5">
-                <img src="/logo.png" alt="Logo" style={{ width: "120px" }} />
+                <img src="/logo.png" alt="Logo" style={{ width: "90px" }} />
             </div>
 
-            {/* USER PROFILE BOX */}
-            <div className="interface-box is-flex is-align-items-center is-justify-content-between">
-                <div>
-                    <p className="has-text-grey is-size-7 is-uppercase mb-1">Active Pilot</p>
-                    <h1 className="title is-5 has-text-white mb-0">{userData?.fullName?.split(' ')[0] || 'Guest'}</h1>
-                    <p className="is-size-7 has-text-primary">ID: #{user.uid.substring(0, 5).toUpperCase()}</p>
+            {/* PLAYER PROFILE & AVATAR EDIT */}
+            {user && (
+                <div className="interface-box">
+                    <div className="is-flex is-align-items-center is-justify-content-between">
+                        <div>
+                            <p className="has-text-grey is-size-7 is-uppercase">Gamer Profile</p>
+                            <h1 className="title is-5 has-text-white mb-0">{userData?.fullName?.split(' ')[0] || 'Player'}</h1>
+                            <p className="is-size-7 has-text-primary">{userData?.totalHours || 0} Total Hours</p>
+                        </div>
+                        <div className="has-text-right">
+                            <figure className="image is-48x48 mb-1" style={{ margin: '0 auto' }}>
+                                <img className="is-rounded" src={userData?.avatar ? `/avatars/${userData.avatar}` : "/avatars/1.png"} style={{ border: '2px solid #00d1b2' }} alt="profile" />
+                            </figure>
+                            <button onClick={() => setShowAvatarPicker(!showAvatarPicker)} className="button is-ghost is-small p-0 is-size-7 has-text-primary">Change Pic</button>
+                        </div>
+                    </div>
+
+                    {/* HIDDEN AVATAR PICKER */}
+                    {showAvatarPicker && (
+                        <div className="avatar-grid">
+                            {avatars.map(a => (
+                                <img 
+                                    key={a} 
+                                    src={`/avatars/${a}`} 
+                                    className={`avatar-item ${userData?.avatar === a ? 'active' : ''}`}
+                                    onClick={() => changeAvatar(a)}
+                                    alt="option"
+                                />
+                            ))}
+                        </div>
+                    )}
                 </div>
-                <figure className="image is-48x48">
-                    <img className="is-rounded" src={userData?.avatar ? `/avatars/${userData.avatar}` : "/avatars/1.png"} style={{ border: '2px solid #00d1b2' }} alt="profile" />
-                </figure>
-            </div>
+            )}
 
-            {/* STATS ROW */}
+            {!user && (
+                <div className="gaming-banner mx-auto" style={{ maxWidth: '450px' }}>
+                    <h2 className="title is-4 has-text-white mb-2">JOIN THE HUB</h2>
+                    <p className="is-size-7 mb-4">Track your hours and rank up against Galle's best.</p>
+                    <Link to="/login" className="button is-white is-rounded has-text-weight-bold px-5" style={{ color: '#006b5a' }}>LOGIN TO PLAY</Link>
+                </div>
+            )}
+
+            {/* CAFE STATUS */}
             <div className="stat-grid">
                 <div className="stat-box">
-                    <p className="is-size-7 has-text-grey-light mb-1">FREE SLOTS</p>
-                    <p className="is-size-3 has-text-weight-bold has-text-success">{TOTAL_MACHINES - occupiedMachines}</p>
+                    <p className="is-size-7 has-text-grey-light mb-1">AVAILABLE</p>
+                    <p className="is-size-3 has-text-weight-bold has-text-success">{TOTAL_STATIONS - livePlayers.length}</p>
                 </div>
                 <div className="stat-box">
-                    <p className="is-size-7 has-text-grey-light mb-1">XP POINTS</p>
-                    <p className="is-size-3 has-text-weight-bold has-text-white">{points}</p>
+                    <p className="is-size-7 has-text-grey-light mb-1">LIVE NOW</p>
+                    <p className="is-size-3 has-text-weight-bold has-text-white">{livePlayers.length}</p>
                 </div>
             </div>
 
-            {/* TRACK ACTIVITY BOX (SCHEDULE) */}
+            {/* LIVE ACTIVITY */}
             <div className="interface-box">
-                <p className="is-size-7 has-text-grey is-uppercase mb-3">Today's Schedule</p>
-                
-                {/* 1. Show User's Personal Active Session first if they are playing */}
-                {activeSession && (
-                    <div className="notification is-success is-light p-2 mb-3" style={{ borderRadius: '12px' }}>
-                        <p className="is-size-7 has-text-centered"><b>YOU ARE LIVE ⚡</b> {activeSession.machine}</p>
-                    </div>
-                )}
-
-                {/* 2. Show all reservations so users know when machines are taken */}
-                {allReservations.length > 0 ? (
-                    allReservations.map((res, i) => {
-                        const isMine = userData?.phone === res.phone;
-                        return (
-                            <div key={i} className="is-flex is-justify-content-between is-align-items-center booking-row">
-                                <div>
-                                    <p className={`is-size-7 ${isMine ? 'has-text-primary has-text-weight-bold' : 'has-text-white'}`}>
-                                        {res.startTime} - {isMine ? "Your Booking" : "Reserved"}
-                                    </p>
-                                    <p className="is-size-7 has-text-grey">{res.machine}</p>
-                                </div>
-                                <span className={`tag is-rounded is-small ${isMine ? 'is-primary' : 'is-dark'}`}>
-                                    {res.duration} Hr
-                                </span>
-                            </div>
-                        );
-                    })
+                <p className="is-size-7 has-text-grey is-uppercase mb-3"><span className="live-pulse"></span>Live Sessions</p>
+                {livePlayers.length > 0 ? (
+                    livePlayers.map((player, i) => (
+                        <div key={i} className="is-flex is-align-items-center mb-3">
+                            <img src={`/avatars/${player.avatar || '1.png'}`} className="image is-24x24 is-rounded mr-2" alt="p" />
+                            <p className="is-size-7 has-text-white"><b>{player.name}</b> on <span className="has-text-primary">{player.machine}</span></p>
+                        </div>
+                    ))
                 ) : (
-                    <p className="is-size-7 has-text-grey">No reservations for today. Machines available!</p>
+                    <p className="is-size-7 has-text-grey-light italic">No active sessions.</p>
                 )}
             </div>
 
-            {/* MEMBER QR BOX */}
-            <div className="interface-box has-text-centered">
-                <p className="is-size-7 has-text-grey is-uppercase mb-3">Identity Pass</p>
-                <div style={{ background: 'white', padding: '10px', display: 'inline-block', borderRadius: '12px' }}>
-                    <QRCode value={JSON.stringify({ uid: user.uid })} size={140} />
-                </div>
+            {/* UPCOMING RESERVATIONS */}
+            <div className="interface-box">
+                <p className="is-size-7 has-text-grey is-uppercase mb-3">Reservations</p>
+                {allReservations.length > 0 ? (
+                    allReservations.slice(0, 4).map((res, i) => (
+                        <div key={i} className="is-flex is-justify-content-between mb-2">
+                            <p className="is-size-7 has-text-white">{res.startTime} - {res.machine}</p>
+                            <span className="tag is-primary is-light is-rounded is-small">Reserved</span>
+                        </div>
+                    ))
+                ) : (
+                    <p className="is-size-7 has-text-grey">Stations available.</p>
+                )}
             </div>
 
-            {/* LEADERBOARD LINK */}
-            <Link to="/leaderboard" className="interface-box action-btn" style={{ background: 'rgba(0, 209, 178, 0.05)' }}>
-                <div>
-                    <p className="title is-6 has-text-white mb-1">Global Rankings</p>
-                    <p className="is-size-7 has-text-primary">Tap to view leaderboard</p>
-                </div>
-                <i className="fas fa-chevron-right has-text-grey"></i>
+            {/* LEADERBOARD PREVIEW */}
+            <Link to="/leaderboard" className="interface-box" style={{ background: 'rgba(0, 209, 178, 0.05)', borderColor: 'rgba(0, 209, 178, 0.2)' }}>
+                <p className="is-size-7 has-text-primary is-uppercase mb-3">Top Gamers</p>
+                {topGamers.map((p, i) => (
+                    <div key={i} className="is-flex is-justify-content-between is-size-7 mb-1">
+                        <span className="has-text-grey-light">{i+1}. {p.fullName}</span>
+                        <span className="has-text-white">{p.totalHours || 0} Hrs</span>
+                    </div>
+                ))}
             </Link>
 
-            {/* SIGN OUT */}
-            <div className="interface-box action-btn" onClick={() => signOut(auth)} style={{ cursor: 'pointer', border: '1px solid rgba(255, 56, 96, 0.2)' }}>
-                <div>
-                    <p className="title is-6 has-text-danger mb-1">SIGN OUT</p>
+            {/* MEMBER ID CARD */}
+            {user && (
+                <div className="interface-box has-text-centered">
+                    <p className="is-size-7 has-text-grey is-uppercase mb-3">Check-in Pass</p>
+                    <div style={{ background: 'white', padding: '10px', display: 'inline-block', borderRadius: '12px' }}>
+                        <QRCode value={JSON.stringify({ uid: user.uid })} size={120} />
+                    </div>
                 </div>
-                <i className="fas fa-sign-out-alt has-text-danger" style={{ opacity: 0.5 }}></i>
-            </div>
+            )}
+
+            {user && (
+                <div className="has-text-centered mt-4">
+                    <button onClick={() => signOut(auth)} className="button is-ghost is-small has-text-grey">Log Out</button>
+                </div>
+            )}
             
-            <div style={{ height: '40px' }}></div>
+            <div style={{ height: '50px' }}></div>
         </div>
     );
 };
