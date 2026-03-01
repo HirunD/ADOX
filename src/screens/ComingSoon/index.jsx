@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 
 const ComingSoon = () => {
   const [timeLeft, setTimeLeft] = useState({});
-  const targetDate = new Date("February 13, 2026 09:00:00").getTime();
+  const targetDate = new Date("March 4, 2026 09:00:00").getTime();
 
   useEffect(() => {
     const timer = setInterval(() => {
