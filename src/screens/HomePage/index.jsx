@@ -23,11 +23,15 @@ const customStyles = `
   .stat-box { background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 20px; padding: 15px; text-align: center; }
   .live-pulse { width: 8px; height: 8px; background: #00d1b2; border-radius: 50%; display: inline-block; margin-right: 8px; box-shadow: 0 0 8px #00d1b2; animation: pulse 1.5s infinite; }
   @keyframes pulse { 0% { transform: scale(0.95); opacity: 0.7; } 70% { transform: scale(1.2); opacity: 1; } 100% { transform: scale(0.95); opacity: 0.7; } }
-  .gaming-banner { background: linear-gradient(135deg, #00d1b2 0%, #006b5a 100%); border-radius: 24px; padding: 30px 20px; text-align: center; color: white; margin-bottom: 20px; border: 1px solid rgba(255, 255, 255, 0.1); }
   
+  .schedule-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
+  .schedule-row:last-child { border-bottom: none; }
+  .time-tag { font-family: 'Monaco', monospace; color: #00d1b2; font-weight: bold; }
+  .end-time-badge { background: rgba(0, 209, 178, 0.1); color: #00d1b2; padding: 2px 8px; border-radius: 6px; font-size: 0.65rem; font-weight: bold; }
+
   /* Avatar Picker Styles */
   .avatar-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 15px; }
-  .avatar-item { cursor: pointer; border-radius: 50%; border: 2px solid transparent; transition: 0.3s; }
+  .avatar-item { cursor: pointer; border-radius: 50%; border: 2px solid transparent; transition: 0.3s; width: 100%; height: auto; }
   .avatar-item.active { border-color: #00d1b2; transform: scale(1.1); }
 `;
 
@@ -39,8 +43,8 @@ const HomePage = () => {
     const [allReservations, setAllReservations] = useState([]);
     const [authLoading, setAuthLoading] = useState(true);
     const [showAvatarPicker, setShowAvatarPicker] = useState(false);
-    
-    const TOTAL_STATIONS = 5;
+
+    const TOTAL_STATIONS = 6;
     const avatars = ["1.png", "2.png", "3.png", "4.png", "5.png", "6.png"];
 
     useEffect(() => {
@@ -52,6 +56,7 @@ const HomePage = () => {
     }, []);
 
     useEffect(() => {
+        // Leaderboard Preview
         const qLeader = query(collection(db, "users"), orderBy("totalHours", "desc"), limit(3));
         const unsubLeader = onSnapshot(qLeader, (snap) => {
             const gamers = [];
@@ -59,6 +64,7 @@ const HomePage = () => {
             setTopGamers(gamers);
         });
 
+        // Live Players with End-Time
         const unsubGlobal = onSnapshot(collection(db, "users"), (snapshot) => {
             let activeSessions = [];
             const now = new Date();
@@ -67,9 +73,15 @@ const HomePage = () => {
                 if (data.sessions) {
                     data.sessions.forEach(s => {
                         const start = new Date(s.startTime);
-                        const end = new Date(start.getTime() + (parseFloat(s.duration) * 60 * 60 * 1000));
+                        const end = new Date(start.getTime() + (parseFloat(s.duration) * 3600000));
                         if (now >= start && now < end) {
-                            activeSessions.push({ name: data.fullName.split(' ')[0], machine: s.machine, avatar: data.avatar });
+                            const endClockTime = end.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                            activeSessions.push({ 
+                                name: data.fullName.split(' ')[0], 
+                                machine: s.machine, 
+                                avatar: data.avatar,
+                                endsAt: endClockTime 
+                            });
                         }
                     });
                 }
@@ -77,6 +89,7 @@ const HomePage = () => {
             setLivePlayers(activeSessions);
         });
 
+        // Today's Reservations
         const today = new Date().toISOString().split('T')[0];
         const qRes = query(collection(db, "reservations"), where("date", "==", today));
         const unsubRes = onSnapshot(qRes, (snap) => {
@@ -113,7 +126,7 @@ const HomePage = () => {
                 <img src="/logo.png" alt="Logo" style={{ width: "90px" }} />
             </div>
 
-            {/* PLAYER PROFILE & AVATAR EDIT */}
+            {/* PLAYER SUMMARY & AVATAR EDIT */}
             {user && (
                 <div className="interface-box">
                     <div className="is-flex is-align-items-center is-justify-content-between">
@@ -123,14 +136,13 @@ const HomePage = () => {
                             <p className="is-size-7 has-text-primary">{userData?.totalHours || 0} Total Hours</p>
                         </div>
                         <div className="has-text-right">
-                            <figure className="image is-48x48 mb-1" style={{ margin: '0 auto' }}>
-                                <img className="is-rounded" src={userData?.avatar ? `/avatars/${userData.avatar}` : "/avatars/1.png"} style={{ border: '2px solid #00d1b2' }} alt="profile" />
+                            <figure className="image is-48x48 mb-1">
+                                <img className="is-rounded" src={userData?.avatar ? `/avatars/${userData.avatar}` : "/avatars/1.png"} style={{ border: '2px solid #00d1b2', height: '48px', objectFit: 'cover' }} alt="profile" />
                             </figure>
                             <button onClick={() => setShowAvatarPicker(!showAvatarPicker)} className="button is-ghost is-small p-0 is-size-7 has-text-primary">Change Pic</button>
                         </div>
                     </div>
 
-                    {/* HIDDEN AVATAR PICKER */}
                     {showAvatarPicker && (
                         <div className="avatar-grid">
                             {avatars.map(a => (
@@ -147,19 +159,11 @@ const HomePage = () => {
                 </div>
             )}
 
-            {!user && (
-                <div className="gaming-banner mx-auto" style={{ maxWidth: '450px' }}>
-                    <h2 className="title is-4 has-text-white mb-2">JOIN THE HUB</h2>
-                    <p className="is-size-7 mb-4">Track your hours and rank up against Galle's best.</p>
-                    <Link to="/login" className="button is-white is-rounded has-text-weight-bold px-5" style={{ color: '#006b5a' }}>LOGIN TO PLAY</Link>
-                </div>
-            )}
-
             {/* CAFE STATUS */}
             <div className="stat-grid">
                 <div className="stat-box">
                     <p className="is-size-7 has-text-grey-light mb-1">AVAILABLE</p>
-                    <p className="is-size-3 has-text-weight-bold has-text-success">{TOTAL_STATIONS - livePlayers.length}</p>
+                    <p className="is-size-3 has-text-weight-bold has-text-success">{Math.max(0, TOTAL_STATIONS - livePlayers.length)}</p>
                 </div>
                 <div className="stat-box">
                     <p className="is-size-7 has-text-grey-light mb-1">LIVE NOW</p>
@@ -172,49 +176,50 @@ const HomePage = () => {
                 <p className="is-size-7 has-text-grey is-uppercase mb-3"><span className="live-pulse"></span>Live Sessions</p>
                 {livePlayers.length > 0 ? (
                     livePlayers.map((player, i) => (
-                        <div key={i} className="is-flex is-align-items-center mb-3">
-                            <img src={`/avatars/${player.avatar || '1.png'}`} className="image is-24x24 is-rounded mr-2" alt="p" />
-                            <p className="is-size-7 has-text-white"><b>{player.name}</b> on <span className="has-text-primary">{player.machine}</span></p>
+                        <div key={i} className="is-flex is-align-items-center is-justify-content-between mb-3">
+                            <div className="is-flex is-align-items-center">
+                                <img src={`/avatars/${player.avatar || '1.png'}`} className="image is-24x24 is-rounded mr-2" alt="p" />
+                                <p className="is-size-7 has-text-white">
+                                    <b>{player.name}</b> <span className="has-text-grey mx-1">on</span> <span className="has-text-primary">{player.machine}</span>
+                                </p>
+                            </div>
+                            <span className="end-time-badge">Ends {player.endsAt}</span>
                         </div>
                     ))
                 ) : (
-                    <p className="is-size-7 has-text-grey-light italic">No active sessions.</p>
+                    <p className="is-size-7 has-text-grey-light italic">No players currently live.</p>
                 )}
             </div>
 
-            {/* UPCOMING RESERVATIONS */}
+            {/* TODAY'S SCHEDULE */}
             <div className="interface-box">
-                <p className="is-size-7 has-text-grey is-uppercase mb-3">Reservations</p>
+                <p className="is-size-7 has-text-grey is-uppercase mb-3">Today's Bookings</p>
                 {allReservations.length > 0 ? (
-                    allReservations.slice(0, 4).map((res, i) => (
-                        <div key={i} className="is-flex is-justify-content-between mb-2">
-                            <p className="is-size-7 has-text-white">{res.startTime} - {res.machine}</p>
-                            <span className="tag is-primary is-light is-rounded is-small">Reserved</span>
+                    allReservations.map((res, i) => (
+                        <div key={i} className="schedule-row">
+                            <span className="time-tag is-size-7">{res.startTime}</span>
+                            <span className="has-text-grey-light is-size-7">{res.machine}</span>
+                            <span className="has-text-grey is-size-7">Reserved</span>
                         </div>
                     ))
                 ) : (
-                    <p className="is-size-7 has-text-grey">Stations available.</p>
+                    <p className="is-size-7 has-text-grey">Stations available for walk-in.</p>
                 )}
             </div>
 
-            {/* LEADERBOARD PREVIEW */}
-            <Link to="/leaderboard" className="interface-box" style={{ background: 'rgba(0, 209, 178, 0.05)', borderColor: 'rgba(0, 209, 178, 0.2)' }}>
-                <p className="is-size-7 has-text-primary is-uppercase mb-3">Top Gamers</p>
-                {topGamers.map((p, i) => (
-                    <div key={i} className="is-flex is-justify-content-between is-size-7 mb-1">
-                        <span className="has-text-grey-light">{i+1}. {p.fullName}</span>
-                        <span className="has-text-white">{p.totalHours || 0} Hrs</span>
-                    </div>
-                ))}
-            </Link>
-
-            {/* MEMBER ID CARD */}
+            {/* CHECK-IN PASS */}
             {user && (
                 <div className="interface-box has-text-centered">
                     <p className="is-size-7 has-text-grey is-uppercase mb-3">Check-in Pass</p>
                     <div style={{ background: 'white', padding: '10px', display: 'inline-block', borderRadius: '12px' }}>
                         <QRCode value={JSON.stringify({ uid: user.uid })} size={120} />
                     </div>
+                </div>
+            )}
+
+            {!user && (
+                <div className="has-text-centered mt-4">
+                     <Link to="/login" className="button is-primary is-outlined is-small is-rounded px-5">LOGIN TO START</Link>
                 </div>
             )}
 

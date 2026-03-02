@@ -10,7 +10,6 @@ const SignUpPage = () => {
         email: "",
         password: "",
         age: "",
-        school: "",
         phone: "",
         avatar: "1.png", 
         isVerified: false
@@ -58,16 +57,22 @@ const SignUpPage = () => {
                 photoURL: `/avatars/${formData.avatar}`
             });
 
+            const now = new Date();
+            const launchStart = new Date("2026-03-03T00:00:00");
+            const launchEnd = new Date("2026-03-10T23:59:59");
+            const isLaunchWeek = now >= launchStart && now <= launchEnd;
+
             await setDoc(doc(db, "users", user.uid), {
                 uid: user.uid,
                 fullName: formData.fullName,
                 email: formData.email,
                 age: Number(formData.age),
-                school: formData.school,
                 phone: formData.phone,
                 avatar: formData.avatar,
                 sessions: [],
-                createdAt: new Date().toISOString()
+                totalHours: 0,
+                createdAt: now.toISOString(),
+                rewardClaimed: !isLaunchWeek 
             });
 
             navigate("/"); 
@@ -79,18 +84,40 @@ const SignUpPage = () => {
     };
 
     return (
-        <section className="section" style={{ background: '#0a0a0a', minHeight: '100vh' }}>
+        <section className="section" style={{ background: '#050505', minHeight: '100vh', display: 'flex', alignItems: 'center' }}>
             <div className="container">
                 <div className="columns is-centered">
                     <div className="column is-5">
-                        <form className="box" style={{ background: '#1a1a1a', border: '1px solid #333', color: 'white' }} onSubmit={handleSignUp} noValidate>
-                            <h1 className="title has-text-white has-text-centered mb-5">Create Player Account</h1>
+                        
+                        {/* 🟢 NEW DESIGNED PROMO BANNER */}
+                        <div style={{
+                            background: "rgba(0, 209, 178, 0.1)",
+                            border: "1px solid #00d1b2",
+                            borderRadius: "15px",
+                            padding: "15px",
+                            marginBottom: "20px",
+                            textAlign: "center",
+                            boxShadow: "0 0 15px rgba(0, 209, 178, 0.2)"
+                        }}>
+                            <p style={{ color: "#00d1b2", fontSize: "11px", letterSpacing: "2px", fontWeight: "bold", marginBottom: "5px", textTransform: "uppercase" }}>
+                                ⚡ Founding Member Bonus
+                            </p>
+                            <h3 style={{ color: "#fff", fontSize: "16px", fontWeight: "bold" }}>
+                                GET 15 MINUTES FREE GAMEPLAY
+                            </h3>
+                            <p style={{ color: "#888", fontSize: "12px", marginTop: "5px" }}>
+                                Valid for all sign-ups during launch week!
+                            </p>
+                        </div>
+
+                        <form className="box" style={{ background: '#111', border: '1px solid #333', color: 'white', borderRadius: '20px' }} onSubmit={handleSignUp} noValidate>
+                            <h1 className="title is-4 has-text-white has-text-centered mb-5">Create Account</h1>
 
                             {error && <div className="notification is-danger is-light p-2 is-size-7">{error}</div>}
 
-                            {/* AVATAR SELECTION GRID */}
+                            {/* AVATAR SELECTION */}
                             <div className="field mb-5">
-                                <label className="label has-text-grey-light has-text-centered">Select Your Avatar</label>
+                                <label className="label has-text-grey-light is-size-7 has-text-centered">CHOOSE YOUR AVATAR</label>
                                 <div className="columns is-multiline is-mobile is-centered mt-2">
                                     {avatars.map((img) => (
                                         <div key={img} className="column is-4-mobile is-4-tablet">
@@ -99,11 +126,10 @@ const SignUpPage = () => {
                                                 style={{
                                                     cursor: 'pointer',
                                                     borderRadius: '12px',
-                                                    padding: '8px',
-                                                    border: formData.avatar === img ? '3px solid #00d1b2' : '1px solid #444',
-                                                    transition: 'all 0.2s ease',
-                                                    backgroundColor: formData.avatar === img ? '#00d1b222' : '#252525',
-                                                    transform: formData.avatar === img ? 'scale(1.05)' : 'scale(1)'
+                                                    padding: '5px',
+                                                    border: formData.avatar === img ? '2px solid #00d1b2' : '1px solid #333',
+                                                    backgroundColor: formData.avatar === img ? 'rgba(0, 209, 178, 0.1)' : '#1a1a1a',
+                                                    transition: '0.3s ease'
                                                 }}
                                             >
                                                 <figure className="image is-square">
@@ -116,37 +142,37 @@ const SignUpPage = () => {
                             </div>
 
                             <div className="field">
-                                <label className="label has-text-grey-light">Full Name</label>
-                                <input className="input is-dark" style={{ background: '#252525', color: 'white', border: '1px solid #444' }} type="text" name="fullName" placeholder="Enter full name" onChange={handleChange} required />
+                                <label className="label has-text-grey-light is-size-7">FULL NAME</label>
+                                <input className="input is-dark" style={{ background: '#1a1a1a', color: 'white', border: '1px solid #333' }} type="text" name="fullName" placeholder="Enter full name" onChange={handleChange} required />
                             </div>
 
-                            <div className="columns">
+                            <div className="columns is-mobile">
                                 <div className="column">
                                     <div className="field">
-                                        <label className="label has-text-grey-light">Age</label>
-                                        <input className="input is-dark" style={{ background: '#252525', color: 'white', border: '1px solid #444' }} type="number" name="age" placeholder="Age" onChange={handleChange} required />
+                                        <label className="label has-text-grey-light is-size-7">AGE</label>
+                                        <input className="input is-dark" style={{ background: '#1a1a1a', color: 'white', border: '1px solid #333' }} type="number" name="age" placeholder="Age" onChange={handleChange} required />
                                     </div>
                                 </div>
                                 <div className="column">
                                     <div className="field">
-                                        <label className="label has-text-grey-light">Phone</label>
-                                        <input className="input is-dark" style={{ background: '#252525', color: 'white', border: '1px solid #444' }} type="tel" name="phone" placeholder="10 Digits" onChange={handleChange} />
+                                        <label className="label has-text-grey-light is-size-7">PHONE</label>
+                                        <input className="input is-dark" style={{ background: '#1a1a1a', color: 'white', border: '1px solid #333' }} type="tel" name="phone" placeholder="10 Digits" onChange={handleChange} />
                                     </div>
                                 </div>
                             </div>
 
                             <div className="field">
-                                <label className="label has-text-grey-light">Email Address</label>
-                                <input className="input is-dark" style={{ background: '#252525', color: 'white', border: '1px solid #444' }} type="email" name="email" placeholder="email@example.com" onChange={handleChange} required />
+                                <label className="label has-text-grey-light is-size-7">EMAIL ADDRESS</label>
+                                <input className="input is-dark" style={{ background: '#1a1a1a', color: 'white', border: '1px solid #333' }} type="email" name="email" placeholder="email@example.com" onChange={handleChange} required />
                             </div>
 
                             <div className="field">
-                                <label className="label has-text-grey-light">Password</label>
-                                <input className="input is-dark" style={{ background: '#252525', color: 'white', border: '1px solid #444' }} type="password" name="password" placeholder="Min 6 chars" onChange={handleChange} required />
+                                <label className="label has-text-grey-light is-size-7">PASSWORD</label>
+                                <input className="input is-dark" style={{ background: '#1a1a1a', color: 'white', border: '1px solid #333' }} type="password" name="password" placeholder="Min 6 chars" onChange={handleChange} required />
                             </div>
 
-                            <div className="field mt-4">
-                                <label className="checkbox has-text-grey-light">
+                            <div className="field mt-5">
+                                <label className="checkbox is-size-7 has-text-grey-light">
                                     <input type="checkbox" name="isVerified" onChange={handleChange} className="mr-2" />
                                     I confirm my details are correct.
                                 </label>
@@ -155,10 +181,16 @@ const SignUpPage = () => {
                             <button 
                                 className={`button is-primary is-fullwidth mt-5 has-text-weight-bold ${loading ? 'is-loading' : ''}`} 
                                 type="submit"
-                                style={{ height: '50px' }}
+                                style={{ 
+                                    height: '50px', 
+                                    background: '#00d1b2', 
+                                    border: 'none', 
+                                    color: '#050505',
+                                    borderRadius: '10px'
+                                }}
                                 disabled={!formData.isVerified || loading}
                             >
-                                START GAMING
+                                CREATE PLAYER ID
                             </button>
                         </form>
                     </div>
