@@ -8,6 +8,23 @@ import { Link } from "react-router-dom";
 const customStyles = `
   body { background-color: #080808; margin: 0; padding: 0; font-family: 'Inter', sans-serif; }
   .scroll-container { min-height: 100vh; padding: 20px 15px; width: 100%; display: block; }
+  
+  /* Logo Normalization */
+  .logo-wrapper { 
+    height: 60px; 
+    display: flex; 
+    align-items: center; 
+    justify-content: center; 
+    margin-bottom: 25px; 
+    width: 100%;
+  }
+  .logo-img {
+    max-height: 100%;
+    width: auto;
+    object-fit: contain;
+    image-orientation: none;
+  }
+
   .interface-box {
     background: rgba(255, 255, 255, 0.03);
     backdrop-filter: blur(10px);
@@ -29,7 +46,6 @@ const customStyles = `
   .time-tag { font-family: 'Monaco', monospace; color: #00d1b2; font-weight: bold; }
   .end-time-badge { background: rgba(0, 209, 178, 0.1); color: #00d1b2; padding: 2px 8px; border-radius: 6px; font-size: 0.65rem; font-weight: bold; }
 
-  /* Avatar Picker Styles */
   .avatar-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 15px; }
   .avatar-item { cursor: pointer; border-radius: 50%; border: 2px solid transparent; transition: 0.3s; width: 100%; height: auto; }
   .avatar-item.active { border-color: #00d1b2; transform: scale(1.1); }
@@ -56,7 +72,6 @@ const HomePage = () => {
     }, []);
 
     useEffect(() => {
-        // Leaderboard Preview
         const qLeader = query(collection(db, "users"), orderBy("totalHours", "desc"), limit(3));
         const unsubLeader = onSnapshot(qLeader, (snap) => {
             const gamers = [];
@@ -64,7 +79,6 @@ const HomePage = () => {
             setTopGamers(gamers);
         });
 
-        // Live Players with End-Time
         const unsubGlobal = onSnapshot(collection(db, "users"), (snapshot) => {
             let activeSessions = [];
             const now = new Date();
@@ -89,7 +103,6 @@ const HomePage = () => {
             setLivePlayers(activeSessions);
         });
 
-        // Today's Reservations
         const today = new Date().toISOString().split('T')[0];
         const qRes = query(collection(db, "reservations"), where("date", "==", today));
         const unsubRes = onSnapshot(qRes, (snap) => {
@@ -122,8 +135,9 @@ const HomePage = () => {
         <div className="scroll-container">
             <style>{customStyles}</style>
 
-            <div className="has-text-centered mb-5">
-                <img src="/logo.png" alt="Logo" style={{ width: "90px" }} />
+            {/* FIXED LOGO SECTION */}
+            <div className="logo-wrapper">
+                <img src="/logo.png" alt="Logo" className="logo-img" />
             </div>
 
             {/* PLAYER SUMMARY & AVATAR EDIT */}
