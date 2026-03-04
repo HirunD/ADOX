@@ -70,86 +70,124 @@ const TransactionsPage = () => {
     };
 
     if (!isAdmin) return (
-        <div className="section" style={{ background: "#050505", minHeight: "100vh" }}>
-            <form className="box" style={{ maxWidth: "400px", margin: "100px auto", background: "#1a1a1a" }} onSubmit={(e) => {
+        <div style={{ background: "#050505", minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: "20px" }}>
+            <form style={{ width: "100%", maxWidth: "380px", background: "#1a1a1a", borderRadius: "12px", padding: "32px", border: "1px solid #333" }} onSubmit={(e) => {
                 e.preventDefault(); if (password === import.meta.env.VITE_ADMIN_PASSWORD) setIsAdmin(true);
             }}>
                 <h1 className="title has-text-white">Admin Login</h1>
-                <input className="input is-dark mb-3" type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
+                <input className="input is-dark mb-3" type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} />
                 <button className="button is-primary is-fullwidth">Login</button>
             </form>
         </div>
     );
 
     return (
-        <div className="section" style={{ background: "#080808", minHeight: "100vh", color: "white" }}>
-            <div className="container">
-                <div className="columns is-vcentered">
-                    <div className="column">
-                        <h1 className="title has-text-white mb-2">Financial Overview</h1>
-                        <p className="subtitle is-6 has-text-primary">Track your earnings and play history</p>
+        <div style={{ background: "#080808", minHeight: "100vh", color: "white", padding: "16px" }}>
+            <style>{`
+                .txn-header { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 20px; }
+                .txn-filters { display: flex; gap: 8px; flex-wrap: wrap; }
+                .txn-table-wrap { display: block; }
+                .txn-cards { display: none; }
+                @media (max-width: 768px) {
+                    .txn-table-wrap { display: none; }
+                    .txn-cards { display: block; }
+                }
+                .txn-card { background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 10px; padding: 14px 16px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+                .txn-card-left { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0; }
+                .txn-card-right { text-align: right; flex-shrink: 0; }
+                .txn-player { font-weight: 700; font-size: 0.9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 160px; }
+                .txn-meta { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-top: 4px; }
+                .txn-date { font-size: 0.72rem; color: #888; }
+            `}</style>
+
+            <div style={{ maxWidth: "900px", margin: "0 auto" }}>
+
+                {/* HEADER */}
+                <div className="txn-header">
+                    <div>
+                        <h1 className="title has-text-white mb-1" style={{ fontSize: "1.4rem" }}>Financial Overview</h1>
+                        <p style={{ color: "#00d1b2", fontSize: "0.8rem" }}>Track your earnings and play history</p>
                     </div>
-                    <div className="column has-text-right">
-                        <div className="buttons is-right">
-                            {["today", "week", "month", "all"].map((f) => (
-                                <button
-                                    key={f}
-                                    className={`button is-small is-rounded is-capitalize ${filter === f ? "is-primary" : "is-dark"}`}
-                                    onClick={() => setFilter(f)}
-                                >
-                                    {f}
-                                </button>
-                            ))}
-                        </div>
+                    <div className="txn-filters">
+                        {["today", "week", "month", "all"].map((f) => (
+                            <button
+                                key={f}
+                                style={{
+                                    padding: "6px 14px", borderRadius: "20px", border: "none", cursor: "pointer", fontSize: "0.8rem", fontWeight: 600, textTransform: "capitalize",
+                                    background: filter === f ? "#00d1b2" : "#2a2a2a",
+                                    color: filter === f ? "#000" : "#aaa"
+                                }}
+                                onClick={() => setFilter(f)}
+                            >
+                                {f}
+                            </button>
+                        ))}
                     </div>
                 </div>
 
                 {/* REVENUE CARD */}
-                <div className="box" style={{ background: "linear-gradient(145deg, #00d1b2 0%, #006b5a 100%)", border: "none" }}>
-                    <p className="is-size-7 is-uppercase has-text-weight-bold" style={{ color: "rgba(255,255,255,0.8)" }}>
+                <div style={{ background: "linear-gradient(135deg, #00d1b2 0%, #006b5a 100%)", borderRadius: "14px", padding: "20px 24px", marginBottom: "20px" }}>
+                    <p style={{ color: "rgba(255,255,255,0.75)", fontSize: "0.72rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em" }}>
                         Total Revenue ({filter})
                     </p>
-                    <h2 className="title is-2 has-text-white">Rs. {totalRevenue.toLocaleString()}</h2>
+                    <h2 style={{ color: "white", fontSize: "2.2rem", fontWeight: 800, marginTop: "4px" }}>Rs. {totalRevenue.toLocaleString()}</h2>
+                    <p style={{ color: "rgba(255,255,255,0.6)", fontSize: "0.78rem", marginTop: "4px" }}>{filteredData.length} transaction{filteredData.length !== 1 ? "s" : ""}</p>
                 </div>
 
-                {/* TRANSACTIONS TABLE */}
-                <div className="box" style={{ background: "#1a1a1a", border: "1px solid #333", padding: "0" }}>
+                {/* DESKTOP TABLE */}
+                <div className="txn-table-wrap" style={{ background: "#1a1a1a", borderRadius: "12px", border: "1px solid #2a2a2a", overflow: "hidden" }}>
                     <div style={{ overflowX: "auto" }}>
-                        <table className="table is-fullwidth is-dark" style={{ background: "transparent" }}>
+                        <table style={{ width: "100%", borderCollapse: "collapse", background: "transparent" }}>
                             <thead>
-                                <tr>
-                                    <th className="has-text-grey">Date</th>
-                                    <th className="has-text-grey">Player</th>
-                                    <th className="has-text-grey">Station</th>
-                                    <th className="has-text-grey">Duration</th>
-                                    <th className="has-text-grey">Method</th>
-                                    <th className="has-text-right has-text-grey">Amount</th>
+                                <tr style={{ borderBottom: "1px solid #333" }}>
+                                    {["Date", "Player", "Station", "Duration", "Method", "Amount"].map((h, i) => (
+                                        <th key={h} style={{ padding: "12px 16px", color: "#666", fontSize: "0.75rem", fontWeight: 600, textTransform: "uppercase", textAlign: i === 5 ? "right" : "left" }}>{h}</th>
+                                    ))}
                                 </tr>
                             </thead>
                             <tbody>
-                                {filteredData.length > 0 ? (
-                                    filteredData.map((t, i) => (
-                                        <tr key={i} style={{ borderBottom: "1px solid #222" }}>
-                                            <td className="is-size-7">
-                                                {new Date(t.startTime).toLocaleDateString()} <br />
-                                                <span className="has-text-grey">{new Date(t.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                                            </td>
-                                            <td className="is-size-7 has-text-weight-bold">{t.players || t.userName}</td>
-                                            <td className="is-size-7"><span className="tag is-dark is-primary is-outlined">{t.machine}</span></td>
-                                            <td className="is-size-7">{t.duration}h</td>
-                                            <td className="is-size-7"><span className={`tag is-small ${t.method === 'CASH' ? 'is-success' : 'is-info'} is-light`}>{t.method}</span></td>
-                                            <td className="has-text-right has-text-weight-bold">Rs. {t.amountPaid}</td>
-                                        </tr>
-                                    ))
-                                ) : (
-                                    <tr>
-                                        <td colSpan="6" className="has-text-centered py-5 has-text-grey">No transactions found for this period.</td>
+                                {filteredData.length > 0 ? filteredData.map((t, i) => (
+                                    <tr key={i} style={{ borderBottom: "1px solid #222" }}>
+                                        <td style={{ padding: "12px 16px", fontSize: "0.8rem" }}>
+                                            {new Date(t.startTime).toLocaleDateString()}<br />
+                                            <span style={{ color: "#666" }}>{new Date(t.startTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+                                        </td>
+                                        <td style={{ padding: "12px 16px", fontSize: "0.85rem", fontWeight: 600 }}>{t.players || t.userName}</td>
+                                        <td style={{ padding: "12px 16px" }}><span style={{ background: "#0d3d35", color: "#00d1b2", border: "1px solid #00d1b2", borderRadius: "6px", padding: "2px 8px", fontSize: "0.75rem" }}>{t.machine}</span></td>
+                                        <td style={{ padding: "12px 16px", fontSize: "0.85rem" }}>{t.duration}h</td>
+                                        <td style={{ padding: "12px 16px" }}><span style={{ background: t.method === "CASH" ? "#1a3a25" : "#1a2a3a", color: t.method === "CASH" ? "#48c774" : "#3273dc", borderRadius: "6px", padding: "2px 8px", fontSize: "0.75rem", fontWeight: 600 }}>{t.method}</span></td>
+                                        <td style={{ padding: "12px 16px", textAlign: "right", fontWeight: 700 }}>Rs. {t.amountPaid}</td>
                                     </tr>
+                                )) : (
+                                    <tr><td colSpan="6" style={{ padding: "40px", textAlign: "center", color: "#555" }}>No transactions found for this period.</td></tr>
                                 )}
                             </tbody>
                         </table>
                     </div>
                 </div>
+
+                {/* MOBILE CARDS */}
+                <div className="txn-cards">
+                    {filteredData.length > 0 ? filteredData.map((t, i) => (
+                        <div key={i} className="txn-card">
+                            <div className="txn-card-left">
+                                <span className="txn-player">{t.players || t.userName}</span>
+                                <div className="txn-meta">
+                                    <span style={{ background: "#0d3d35", color: "#00d1b2", border: "1px solid #00d1b2", borderRadius: "5px", padding: "1px 7px", fontSize: "0.72rem" }}>{t.machine}</span>
+                                    <span style={{ background: t.method === "CASH" ? "#1a3a25" : "#1a2a3a", color: t.method === "CASH" ? "#48c774" : "#3273dc", borderRadius: "5px", padding: "1px 7px", fontSize: "0.72rem", fontWeight: 600 }}>{t.method}</span>
+                                    <span style={{ color: "#666", fontSize: "0.72rem" }}>{t.duration}h</span>
+                                </div>
+                                <span className="txn-date">{new Date(t.startTime).toLocaleDateString()} · {new Date(t.startTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+                            </div>
+                            <div className="txn-card-right">
+                                <span style={{ fontWeight: 800, fontSize: "1rem", color: "#fff" }}>Rs. {t.amountPaid}</span>
+                            </div>
+                        </div>
+                    )) : (
+                        <p style={{ textAlign: "center", color: "#555", padding: "40px 0" }}>No transactions found for this period.</p>
+                    )}
+                </div>
+
             </div>
         </div>
     );
