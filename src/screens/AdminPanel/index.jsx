@@ -10,7 +10,7 @@ const AdminPanel = () => {
   const [isAdmin, setIsAdmin] = useState(false);
   const [password, setPassword] = useState("");
   const [userData, setUserData] = useState(null);
-  const [friendData, setFriendData] = useState(null); 
+  const [friendData, setFriendData] = useState(null);
   const [friendPhone, setFriendPhone] = useState("");
   const [isUpdating, setIsUpdating] = useState(false);
   const [pendingTransaction, setPendingTransaction] = useState(null);
@@ -64,7 +64,7 @@ const AdminPanel = () => {
   const handleQrScan = async (uid) => {
     const userDoc = await getDoc(doc(db, "users", uid));
     if (userDoc.exists()) {
-      audioRef.current.play().catch(() => {});
+      audioRef.current.play().catch(() => { });
       setUserData({ ...userDoc.data(), uid });
     }
   };
@@ -80,7 +80,7 @@ const AdminPanel = () => {
   useEffect(() => {
     onSnapshot(doc(db, "settings", "pricing"), (docSnap) => { if (docSnap.exists()) setStandardPricing(docSnap.data()); });
     onSnapshot(doc(db, "settings", "peak"), (docSnap) => { if (docSnap.exists()) setPeakPricing(docSnap.data()); });
-    
+
     const today = new Date().toISOString().split("T")[0];
     const qRes = query(collection(db, "reservations"), where("date", "==", today));
     onSnapshot(qRes, (snap) => {
@@ -123,7 +123,7 @@ const AdminPanel = () => {
       const snap = await getDocs(q);
       if (!snap.empty) {
         const data = { ...snap.docs[0].data(), uid: snap.docs[0].id };
-        if (type === "primary") { setUserData(data); setSearchPhone(""); } 
+        if (type === "primary") { setUserData(data); setSearchPhone(""); }
         else { setFriendData(data); setFriendPhone(""); }
       } else { alert("User not found"); }
     } catch (err) { console.error(err); }
@@ -139,8 +139,8 @@ const AdminPanel = () => {
     // Calculate Bonus Time
     const userBonusMins = (!userData.isGuest && userData.rewardClaimed === false) ? (userData.bonusMinutes || 0) : 0;
     const friendBonusMins = (friendData && friendData.rewardClaimed === false) ? (friendData.bonusMinutes || 0) : 0;
-    const totalBonusHours = (userBonusMins + friendBonusMins) / 60;
-    
+    const totalBonusHours = (userBonusMins) / 60;
+
     const finalDuration = pendingTransaction.hours + totalBonusHours;
     const finalAmount = Number(pendingTransaction.price);
     const playersNames = friendData ? `${userData.fullName} & ${friendData.fullName}` : userData.fullName;
@@ -169,7 +169,7 @@ const AdminPanel = () => {
       }
 
       setReceiptData({ ...sessionData, name: playersNames, total: finalAmount, bonus: (userBonusMins + friendBonusMins) });
-      
+
       setTimeout(() => {
         window.print();
         setUserData(null); setFriendData(null); setPendingTransaction(null);
@@ -253,7 +253,7 @@ const AdminPanel = () => {
                       </div>
                     )}
                   </div>
-                  <div className="column has-text-right"><button className="delete" onClick={() => {setUserData(null); setFriendData(null);}}></button></div>
+                  <div className="column has-text-right"><button className="delete" onClick={() => { setUserData(null); setFriendData(null); }}></button></div>
                 </div>
 
                 <div className="columns mt-4">
