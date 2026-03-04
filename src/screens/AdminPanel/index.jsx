@@ -139,7 +139,7 @@ const AdminPanel = () => {
     // Calculate Bonus Time
     const userBonusMins = (!userData.isGuest && userData.rewardClaimed === false) ? (userData.bonusMinutes || 0) : 0;
     const friendBonusMins = (friendData && friendData.rewardClaimed === false) ? (friendData.bonusMinutes || 0) : 0;
-    const totalBonusHours = (userBonusMins) / 60;
+    const totalBonusHours = userBonusMins / 60; // Only primary user's bonus applied to duration
 
     const finalDuration = pendingTransaction.hours + totalBonusHours;
     const finalAmount = Number(pendingTransaction.price);
@@ -242,16 +242,6 @@ const AdminPanel = () => {
                 <div className="columns">
                   <div className="column">
                     <h2 className="title is-5 has-text-white mb-1">Player: {userData.fullName}</h2>
-                    <div className="field has-addons mt-4">
-                      <div className="control is-expanded"><input className="input is-small is-dark" placeholder="Add Friend Phone..." value={friendPhone} onChange={(e) => setFriendPhone(e.target.value)} /></div>
-                      <div className="control"><button className="button is-small is-info" onClick={() => handlePhoneSearch(null, "friend")}>Add Friend</button></div>
-                    </div>
-                    {friendData && (
-                      <div className="tag is-info is-light mt-2" style={{ width: "100%", justifyContent: "space-between" }}>
-                        <span>Friend: {friendData.fullName}</span>
-                        <button className="delete is-small" onClick={() => setFriendData(null)}></button>
-                      </div>
-                    )}
                   </div>
                   <div className="column has-text-right"><button className="delete" onClick={() => { setUserData(null); setFriendData(null); }}></button></div>
                 </div>

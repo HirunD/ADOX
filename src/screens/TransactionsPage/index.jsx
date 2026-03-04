@@ -3,9 +3,11 @@ import { db } from "../../firebase";
 import { collection, onSnapshot } from "firebase/firestore";
 
 const TransactionsPage = () => {
+    const [isAdmin, setIsAdmin] = useState(false);
+    const [password, setPassword] = useState("");
     const [transactions, setTransactions] = useState([]);
     const [filteredData, setFilteredData] = useState([]);
-    const [filter, setFilter] = useState("today"); // today, week, month, all
+    const [filter, setFilter] = useState("all"); // today, week, month, all
     const [totalRevenue, setTotalRevenue] = useState(0);
 
     useEffect(() => {
@@ -24,8 +26,17 @@ const TransactionsPage = () => {
                     });
                 }
             });
+            // Deduplicate by machine + startTime (shared sessions are saved to both users, we only want one billing entry)
+            const seen = new Set();
+            const unique = allSessions.filter((s) => {
+                const key = `${s.machine}_${s.startTime}`;
+                if (seen.has(key)) return false;
+                seen.add(key);
+                return true;
+            });
+
             // Sort by newest first
-            const sorted = allSessions.sort((a, b) => new Date(b.startTime) - new Date(a.startTime));
+            const sorted = unique.sort((a, b) => new Date(b.startTime) - new Date(a.startTime));
             setTransactions(sorted);
         });
 
@@ -38,10 +49,11 @@ const TransactionsPage = () => {
 
     const filterData = () => {
         const now = new Date();
+        const toLocalDate = (d) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
         let filtered = transactions.filter((t) => {
             const tDate = new Date(t.startTime);
             if (filter === "today") {
-                return tDate.toDateString() === now.toDateString();
+                return toLocalDate(tDate) === toLocalDate(now);
             } else if (filter === "week") {
                 const oneWeekAgo = new Date();
                 oneWeekAgo.setDate(now.getDate() - 7);
@@ -56,6 +68,18 @@ const TransactionsPage = () => {
         const total = filtered.reduce((sum, t) => sum + (Number(t.amountPaid) || 0), 0);
         setTotalRevenue(total);
     };
+
+    if (!isAdmin) return (
+        <div className="section" style={{ background: "#050505", minHeight: "100vh" }}>
+            <form className="box" style={{ maxWidth: "400px", margin: "100px auto", background: "#1a1a1a" }} onSubmit={(e) => {
+                e.preventDefault(); if (password === import.meta.env.VITE_ADMIN_PASSWORD) setIsAdmin(true);
+            }}>
+                <h1 className="title has-text-white">Admin Login</h1>
+                <input className="input is-dark mb-3" type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
+                <button className="button is-primary is-fullwidth">Login</button>
+            </form>
+        </div>
+    );
 
     return (
         <div className="section" style={{ background: "#080808", minHeight: "100vh", color: "white" }}>
