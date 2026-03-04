@@ -14,8 +14,10 @@ import AdminPricing from "./screens/AdminPricing";
 import ComingSoon from "./screens/ComingSoon";
 
 // Import your CSS for the loader (or add to your main CSS file)
-import "./App.css"; 
+import "./App.css";
 import AdminReservations from "./screens/AdminReservations";
+import { Transaction } from "firebase/firestore";
+import TransactionsPage from "./screens/TransactionsPage";
 
 const App = () => {
     const [isLoading, setIsLoading] = useState(true);
@@ -56,6 +58,8 @@ const App = () => {
                         <Route path="/admin/analytics" element={<AnalyticsPage />} />
                         <Route path="/revenue" element={<RevenueDashboard />} />
                         <Route path="/leaderboard" element={<Leaderboard />} />
+                        <Route path="/admin/transaction" element={<TransactionsPage />} />
+
                         {/* <Route path="/price" element={<AdminPricing />} /> */}
                     </Routes>
                 </BrowserRouter>
