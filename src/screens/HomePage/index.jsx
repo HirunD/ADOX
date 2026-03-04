@@ -25,6 +25,35 @@ const customStyles = `
     image-orientation: none;
   }
 
+  /* 🟢 PRE-SIGN UP BANNER - TEAL THEME */
+  .reward-banner {
+    width: 100%;
+    max-width: 450px;
+    background: linear-gradient(145deg, #00d1b2 0%, #006b5a 100%);
+    border-radius: 24px;
+    padding: 25px 20px;
+    text-align: center;
+    margin: 0 auto 20px auto;
+    box-shadow: 0 15px 30px rgba(0, 209, 178, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  .reward-banner h2 { fontSize: 22px; fontWeight: 900; color: #fff; margin: 0 0 8px 0; letter-spacing: -0.5px; }
+  .reward-banner p { fontSize: 14px; color: rgba(255,255,255,0.9); marginBottom: 18px; }
+  
+  .claim-btn {
+    display: inline-block;
+    background: #fff;
+    color: #006b5a;
+    padding: 12px 25px;
+    border-radius: 50px;
+    text-decoration: none;
+    font-weight: 900;
+    font-size: 14px;
+    text-transform: uppercase;
+    animation: pulse 2s infinite;
+  }
+
   .interface-box {
     background: rgba(255, 255, 255, 0.03);
     backdrop-filter: blur(10px);
@@ -36,18 +65,24 @@ const customStyles = `
     padding: 20px;
     box-sizing: border-box;
   }
+
   .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; width: 100%; max-width: 450px; margin: 0 auto 12px auto; }
   .stat-box { background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 20px; padding: 15px; text-align: center; }
+  
   .live-pulse { width: 8px; height: 8px; background: #00d1b2; border-radius: 50%; display: inline-block; margin-right: 8px; box-shadow: 0 0 8px #00d1b2; animation: pulse 1.5s infinite; }
-  @keyframes pulse { 0% { transform: scale(0.95); opacity: 0.7; } 70% { transform: scale(1.2); opacity: 1; } 100% { transform: scale(0.95); opacity: 0.7; } }
+  
+  @keyframes pulse { 
+    0% { transform: scale(0.95); opacity: 0.7; box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.4); } 
+    70% { transform: scale(1.1); opacity: 1; box-shadow: 0 0 0 10px rgba(255, 255, 255, 0); } 
+    100% { transform: scale(0.95); opacity: 0.7; } 
+  }
   
   .schedule-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
   .schedule-row:last-child { border-bottom: none; }
   .time-tag { font-family: 'Monaco', monospace; color: #00d1b2; font-weight: bold; }
   .end-time-badge { background: rgba(0, 209, 178, 0.1); color: #00d1b2; padding: 2px 8px; border-radius: 6px; font-size: 0.65rem; font-weight: bold; }
 
-  .avatar-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 15px; }
-  .avatar-item { cursor: pointer; border-radius: 50%; border: 2px solid transparent; transition: 0.3s; width: 100%; height: auto; }
+  .avatar-item { cursor: pointer; border-radius: 50%; border: 2px solid transparent; transition: 0.3s; }
   .avatar-item.active { border-color: #00d1b2; transform: scale(1.1); }
 `;
 
@@ -55,7 +90,6 @@ const HomePage = () => {
     const [user, setUser] = useState(null);
     const [userData, setUserData] = useState(null);
     const [livePlayers, setLivePlayers] = useState([]);
-    const [topGamers, setTopGamers] = useState([]);
     const [allReservations, setAllReservations] = useState([]);
     const [authLoading, setAuthLoading] = useState(true);
     const [showAvatarPicker, setShowAvatarPicker] = useState(false);
@@ -72,13 +106,6 @@ const HomePage = () => {
     }, []);
 
     useEffect(() => {
-        const qLeader = query(collection(db, "users"), orderBy("totalHours", "desc"), limit(3));
-        const unsubLeader = onSnapshot(qLeader, (snap) => {
-            const gamers = [];
-            snap.forEach(d => gamers.push(d.data()));
-            setTopGamers(gamers);
-        });
-
         const unsubGlobal = onSnapshot(collection(db, "users"), (snapshot) => {
             let activeSessions = [];
             const now = new Date();
@@ -89,12 +116,11 @@ const HomePage = () => {
                         const start = new Date(s.startTime);
                         const end = new Date(start.getTime() + (parseFloat(s.duration) * 3600000));
                         if (now >= start && now < end) {
-                            const endClockTime = end.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
                             activeSessions.push({ 
                                 name: data.fullName.split(' ')[0], 
                                 machine: s.machine, 
                                 avatar: data.avatar,
-                                endsAt: endClockTime 
+                                endsAt: end.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) 
                             });
                         }
                     });
@@ -116,17 +142,14 @@ const HomePage = () => {
                 if (docSnap.exists()) setUserData(docSnap.data());
             });
         }
-
-        return () => { unsubLeader(); unsubGlobal(); unsubRes(); };
+        return () => { unsubGlobal(); unsubRes(); };
     }, [user]);
 
     const changeAvatar = async (img) => {
         try {
             await updateDoc(doc(db, "users", user.uid), { avatar: img });
             setShowAvatarPicker(false);
-        } catch (err) {
-            alert("Error updating avatar");
-        }
+        } catch (err) { alert("Error updating avatar"); }
     };
 
     if (authLoading) return <div className="has-text-centered py-6"><i className="fas fa-circle-notch fa-spin has-text-primary"></i></div>;
@@ -135,12 +158,22 @@ const HomePage = () => {
         <div className="scroll-container">
             <style>{customStyles}</style>
 
-            {/* FIXED LOGO SECTION */}
             <div className="logo-wrapper">
                 <img src="/logo.png" alt="Logo" className="logo-img" />
             </div>
 
-            {/* PLAYER SUMMARY & AVATAR EDIT */}
+            {/* 🎁 REWARD BANNER (Only for Guests) */}
+            {!user && (
+                <div className="reward-banner">
+                    <h2>PRE-SIGN UP NOW</h2>
+                    <p>
+                        Get <span style={{ background: "#fff", color: "#006b5a", padding: "2px 8px", borderRadius: "5px", fontWeight: "800" }}>15 MINS FREE</span> gameplay when you register!
+                    </p>
+                    <Link to="/signup" className="claim-btn">CLAIM MY REWARD</Link>
+                </div>
+            )}
+
+            {/* PROFILE BOX (Only for Users) */}
             {user && (
                 <div className="interface-box">
                     <div className="is-flex is-align-items-center is-justify-content-between">
@@ -151,22 +184,15 @@ const HomePage = () => {
                         </div>
                         <div className="has-text-right">
                             <figure className="image is-48x48 mb-1">
-                                <img className="is-rounded" src={userData?.avatar ? `/avatars/${userData.avatar}` : "/avatars/1.png"} style={{ border: '2px solid #00d1b2', height: '48px', objectFit: 'cover' }} alt="profile" />
+                                <img className="is-rounded" src={userData?.avatar ? `/avatars/${userData.avatar}` : "/avatars/1.png"} style={{ border: '2px solid #00d1b2', height: '48px', width: '48px', objectFit: 'cover' }} alt="profile" />
                             </figure>
                             <button onClick={() => setShowAvatarPicker(!showAvatarPicker)} className="button is-ghost is-small p-0 is-size-7 has-text-primary">Change Pic</button>
                         </div>
                     </div>
-
                     {showAvatarPicker && (
-                        <div className="avatar-grid">
+                        <div className="avatar-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px', marginTop: '15px' }}>
                             {avatars.map(a => (
-                                <img 
-                                    key={a} 
-                                    src={`/avatars/${a}`} 
-                                    className={`avatar-item ${userData?.avatar === a ? 'active' : ''}`}
-                                    onClick={() => changeAvatar(a)}
-                                    alt="option"
-                                />
+                                <img key={a} src={`/avatars/${a}`} className={`avatar-item ${userData?.avatar === a ? 'active' : ''}`} onClick={() => changeAvatar(a)} alt="option" />
                             ))}
                         </div>
                     )}
@@ -242,8 +268,6 @@ const HomePage = () => {
                     <button onClick={() => signOut(auth)} className="button is-ghost is-small has-text-grey">Log Out</button>
                 </div>
             )}
-            
-            <div style={{ height: '50px' }}></div>
         </div>
     );
 };
