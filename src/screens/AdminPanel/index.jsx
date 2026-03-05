@@ -21,6 +21,7 @@ const AdminPanel = () => {
   const [lapTime, setLapTime] = useState("");
   const [receiptData, setReceiptData] = useState(null);
   const [activeSessions, setActiveSessions] = useState([]);
+  const [sessionCountdowns, setSessionCountdowns] = useState({});
   const [reservations, setReservations] = useState([]);
   const [occupiedCount, setOccupiedCount] = useState(0);
 
@@ -103,7 +104,7 @@ const AdminPanel = () => {
             const end = new Date(start.getTime() + (durationHrs * 3600000));
             if (now >= start && now < end) {
               if (!active.find(a => a.machine === s.machine && a.startTime === s.startTime)) {
-                active.push({ ...s, name: s.players || data.fullName, endTime: end, timeLeft: Math.round((end - now) / 60000) });
+                active.push({ ...s, name: s.players || data.fullName, endTime: end });
               }
             }
           });
@@ -114,6 +115,30 @@ const AdminPanel = () => {
     });
     return () => unsubscribe();
   }, []);
+
+  // --- REAL-TIME COUNTDOWN TIMER ---
+  const alertedSessions = useRef(new Set());
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const now = Date.now();
+      const updated = {};
+      activeSessions.forEach((s) => {
+        const key = `${s.machine}-${s.startTime}`;
+        const secsLeft = Math.round((s.endTime.getTime() - now) / 1000);
+        if (secsLeft <= 0) {
+          if (!alertedSessions.current.has(key)) {
+            alertedSessions.current.add(key);
+            alert(`⏰ Time's up for ${s.machine}! (${s.name})`);
+          }
+          updated[key] = 0;
+        } else {
+          updated[key] = secsLeft;
+        }
+      });
+      setSessionCountdowns(updated);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [activeSessions]);
 
   const handlePhoneSearch = async (e, type = "primary") => {
     if (e) e.preventDefault();
@@ -212,12 +237,20 @@ const AdminPanel = () => {
             {/* LIVE STATUS BOX */}
             <div className="box mb-4" style={{ background: "#1a1a1a", border: "1px solid #333" }}>
               <h3 className="subtitle is-6 has-text-white mb-2">Live Stations ({occupiedCount}/{TOTAL_CAPACITY})</h3>
-              {activeSessions.map((s, i) => (
-                <div key={i} className="mb-2 p-2" style={{ background: "#222", borderLeft: s.timeLeft <= 5 ? "4px solid #ff3860" : "4px solid #00d1b2" }}>
-                  <p className="is-size-7 has-text-white"><b>{s.machine}</b>: {s.name}</p>
-                  <p className={`is-size-7 ${s.timeLeft <= 5 ? 'has-text-danger' : 'has-text-warning'}`}>{s.timeLeft}m left</p>
-                </div>
-              ))}
+              {activeSessions.map((s, i) => {
+                const key = `${s.machine}-${s.startTime}`;
+                const secsLeft = sessionCountdowns[key] ?? Math.round((s.endTime.getTime() - Date.now()) / 1000);
+                const minsLeft = Math.floor(secsLeft / 60);
+                const secs = secsLeft % 60;
+                const isUrgent = secsLeft <= 300; // 5 minutes
+                const display = `${minsLeft}:${String(secs).padStart(2, '0')}`;
+                return (
+                  <div key={i} className="mb-2 p-2" style={{ background: "#222", borderLeft: isUrgent ? "4px solid #ff3860" : "4px solid #00d1b2" }}>
+                    <p className="is-size-7 has-text-white"><b>{s.machine}</b>: {s.name}</p>
+                    <p className={`is-size-7 ${isUrgent ? 'has-text-danger' : 'has-text-warning'}`}>{display} left</p>
+                  </div>
+                );
+              })}
             </div>
 
             {/* SCANNER */}
