@@ -18,6 +18,7 @@ import "./App.css";
 import AdminReservations from "./screens/AdminReservations";
 import { Transaction } from "firebase/firestore";
 import TransactionsPage from "./screens/TransactionsPage";
+import PlayersList from "./screens/PlayerList";
 
 const App = () => {
     const [isLoading, setIsLoading] = useState(true);
@@ -59,6 +60,8 @@ const App = () => {
                         <Route path="/revenue" element={<RevenueDashboard />} />
                         <Route path="/leaderboard" element={<Leaderboard />} />
                         <Route path="/admin/transaction" element={<TransactionsPage />} />
+                        <Route path="/users" element={<PlayersList />} />
+
 
                         {/* <Route path="/price" element={<AdminPricing />} /> */}
                     </Routes>
