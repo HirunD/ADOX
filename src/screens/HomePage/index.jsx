@@ -18,7 +18,6 @@ const customStyles = `
   .live-pulse { width: 8px; height: 8px; background: #00d1b2; border-radius: 50%; display: inline-block; margin-right: 8px; box-shadow: 0 0 8px #00d1b2; animation: pulse 1.5s infinite; }
   @keyframes pulse { 0% { transform: scale(0.95); opacity: 0.7; } 70% { transform: scale(1.1); opacity: 1; } 100% { transform: scale(0.95); opacity: 0.7; } }
   .schedule-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
-  .end-time-badge { background: rgba(0, 209, 178, 0.1); color: #00d1b2; padding: 2px 8px; border-radius: 6px; font-size: 0.65rem; font-weight: bold; }
   .avatar-item { cursor: pointer; border-radius: 50%; border: 2px solid transparent; transition: 0.3s; }
   .avatar-item.active { border-color: #00d1b2; transform: scale(1.1); }
 `;
@@ -31,7 +30,8 @@ const HomePage = () => {
     const [authLoading, setAuthLoading] = useState(true);
     const [showAvatarPicker, setShowAvatarPicker] = useState(false);
 
-    const TOTAL_STATIONS = 6;
+    // Set to 5 physical active stations
+    const TOTAL_STATIONS = 5; 
     const avatars = ["1.png", "2.png", "3.png", "4.png", "5.png", "6.png"];
 
     useEffect(() => {
@@ -51,6 +51,9 @@ const HomePage = () => {
                 const data = userDoc.data();
                 if (data.sessions) {
                     data.sessions.forEach(s => {
+                        // FILTER: Ignore PS4 #3 as it is for admin exceptions/mistakes only
+                        if (s.machine === "PS4 #3") return;
+
                         const start = new Date(s.startTime);
                         const durationHrs = parseFloat(s.duration) || 0;
                         const end = new Date(start.getTime() + (durationHrs * 3600000));
@@ -107,9 +110,9 @@ const HomePage = () => {
 
             {!user && (
                 <div className="reward-banner">
-                    <h2>PRE-SIGN UP NOW</h2>
-                    <p>Get <span style={{ background: "#fff", color: "#006b5a", padding: "2px 8px", borderRadius: "5px", fontWeight: "800" }}>15 MINS FREE</span> gameplay!</p>
-                    <Link to="/signup" className="claim-btn">CLAIM MY REWARD</Link>
+                    <h2>READY TO RACE?</h2>
+                    <p>Sign up now to track your <span style={{ background: "#fff", color: "#006b5a", padding: "2px 8px", borderRadius: "5px", fontWeight: "800" }}>BEST LAPS</span> and more!</p>
+                    <Link to="/signup" className="claim-btn">CREATE PLAYER ID</Link>
                 </div>
             )}
 

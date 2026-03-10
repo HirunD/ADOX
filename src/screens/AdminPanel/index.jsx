@@ -312,7 +312,7 @@ const AdminPanel = () => {
                 {!friendData && (
                   <form onSubmit={(e) => handlePhoneSearch(e, "friend")} className="field has-addons mt-2">
                     <div className="control is-expanded">
-                      <input className="input is-small is-dark" placeholder="Add Friend's Phone" value={friendPhone} onChange={(e) => setFriendPhone(e.target.value)} />
+                      <input className="input is-small is-dark" placeholder="Add Friend' Phone" value={friendPhone} onChange={(e) => setFriendPhone(e.target.value)} />
                     </div>
                     <div className="control"><button type="submit" className="button is-small is-info">Add Friend</button></div>
                   </form>
