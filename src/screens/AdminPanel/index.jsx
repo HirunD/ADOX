@@ -73,12 +73,10 @@ const AdminPanel = () => {
 
   // --- DATA LISTENERS ---
   useEffect(() => {
-    // Pricing listener
     onSnapshot(doc(db, "settings", "pricing"), (docSnap) => {
       if (docSnap.exists()) setStandardPricing(docSnap.data());
     });
 
-    // Transactions listener (Deduplicated)
     const unsubTxn = onSnapshot(collection(db, "users"), (snapshot) => {
       let allSessions = [];
       snapshot.forEach((d) => {
@@ -97,7 +95,6 @@ const AdminPanel = () => {
       setTransactions(unique.sort((a, b) => new Date(b.startTime) - new Date(a.startTime)));
     });
 
-    // Live Sessions listener
     const unsubLive = onSnapshot(collection(db, "users"), (snapshot) => {
       const now = new Date();
       const active = [];
@@ -123,7 +120,6 @@ const AdminPanel = () => {
     return () => { unsubTxn(); unsubLive(); };
   }, []);
 
-  // --- TRANSACTIONS FILTER LOGIC ---
   useEffect(() => {
     const now = new Date();
     const filtered = transactions.filter((t) => {
@@ -140,7 +136,6 @@ const AdminPanel = () => {
     setTotalRevenue(filtered.reduce((sum, t) => sum + (Number(t.amountPaid) || 0), 0));
   }, [transactions, txnFilter]);
 
-  // --- COUNTDOWN TIMERS ---
   const alertedSessions = useRef(new Set());
   useEffect(() => {
     const interval = setInterval(() => {
@@ -178,17 +173,11 @@ const AdminPanel = () => {
     } catch (err) { console.error(err); }
   };
 
-  // --- PAYMENT CONFIRMATION ---
   const confirmPayment = async (method) => {
     if (!userData || !pendingTransaction || !selectedMachine) return alert("Missing Info!");
-    if (activeSessions.some(s => s.machine === selectedMachine)) return alert("Machine Occupied!");
-
     setIsUpdating(true);
-
     const userBonusMins = (!userData.isGuest && userData.rewardClaimed === false) ? (userData.bonusMinutes || 0) : 0;
     const friendBonusMins = (friendData && friendData.rewardClaimed === false) ? (friendData.bonusMinutes || 0) : 0;
-
-    // Duration gets the primary player's bonus
     const finalDuration = pendingTransaction.hours + (userBonusMins / 60);
     const finalAmount = Number(pendingTransaction.price);
     const playersNames = friendData ? `${userData.fullName} & ${friendData.fullName}` : userData.fullName;
@@ -205,22 +194,14 @@ const AdminPanel = () => {
     };
 
     try {
-      // 1. Update Primary Player (Record Session & Money)
       const userRef = doc(db, userData.isGuest ? "guests" : "users", userData.uid);
-      if (userData.isGuest) {
-        await setDoc(userRef, { ...userData, session: sessionData });
-      } else {
-        await updateDoc(userRef, { sessions: arrayUnion(sessionData), rewardClaimed: true });
-      }
-
-      // 2. Update Friend (Mark reward as used, DO NOT record session to avoid double revenue)
+      if (userData.isGuest) { await setDoc(userRef, { ...userData, session: sessionData }); }
+      else { await updateDoc(userRef, { sessions: arrayUnion(sessionData), rewardClaimed: true }); }
       if (friendData) {
         const friendRef = doc(db, "users", friendData.uid);
         await updateDoc(friendRef, { rewardClaimed: true });
       }
-
       setReceiptData({ ...sessionData, name: playersNames, total: finalAmount, bonus: (userBonusMins + friendBonusMins) });
-
       setTimeout(() => {
         window.print();
         setUserData(null); setFriendData(null); setPendingTransaction(null);
@@ -242,7 +223,7 @@ const AdminPanel = () => {
   );
 
   return (
-    <div className="section" style={{ background: "#050505", minHeight: "100vh" }}>
+    <div className="section" style={{ background: "#050505", minHeight: "100vh", padding: "1.5rem 0.75rem" }}>
       {/* RECEIPT PRINTING AREA */}
       <div id="receipt-print" style={{ display: "none" }}>
         {receiptData && (
@@ -257,98 +238,119 @@ const AdminPanel = () => {
         )}
       </div>
 
-      <div className="container">
-        <div className="columns">
-          <div className="column is-4">
-            {/* LIVE STATUS */}
-            <div className="box mb-4" style={{ background: "#1a1a1a", border: "1px solid #333" }}>
-              <h3 className="subtitle is-6 has-text-white mb-2">Live Stations ({occupiedCount}/{TOTAL_CAPACITY})</h3>
-              {activeSessions.map((s, i) => {
-                const key = `${s.machine}-${s.startTime}`;
-                const secsLeft = sessionCountdowns[key] ?? Math.round((s.endTime.getTime() - Date.now()) / 1000);
-                const minsLeft = Math.floor(secsLeft / 60);
-                const secs = secsLeft % 60;
-                const isUrgent = secsLeft <= 300;
-                return (
-                  <div key={i} className="mb-2 p-2" style={{ background: "#222", borderLeft: isUrgent ? "4px solid #ff3860" : "4px solid #00d1b2" }}>
-                    <p className="is-size-7 has-text-white"><b>{s.machine}</b>: {s.name}</p>
-                    <p className={`is-size-7 ${isUrgent ? 'has-text-danger' : 'has-text-warning'}`}>
-                      {minsLeft}:{String(secs).padStart(2, '0')} left
-                    </p>
-                  </div>
-                );
-              })}
-            </div>
+      <div className="container is-fluid">
+        <div className="columns is-multiline">
+          
+          {/* SIDEBAR: LIVE STATUS & SCANNER */}
+          <div className="column is-12-tablet is-4-desktop">
+            <div style={{ position: "sticky", top: "1rem" }}>
+              {/* LIVE STATUS */}
+              <div className="box mb-4" style={{ background: "#1a1a1a", border: "1px solid #333" }}>
+                <h3 className="subtitle is-6 has-text-white mb-3">Live Stations ({occupiedCount}/{TOTAL_CAPACITY})</h3>
+                <div className="columns is-mobile is-multiline">
+                    {activeSessions.map((s, i) => {
+                    const key = `${s.machine}-${s.startTime}`;
+                    const secsLeft = sessionCountdowns[key] ?? Math.round((s.endTime.getTime() - Date.now()) / 1000);
+                    const minsLeft = Math.floor(secsLeft / 60);
+                    const secs = secsLeft % 60;
+                    const isUrgent = secsLeft <= 300;
+                    return (
+                        <div key={i} className="column is-12-tablet is-12-mobile">
+                            <div className="p-2" style={{ background: "#222", borderLeft: isUrgent ? "4px solid #ff3860" : "4px solid #00d1b2", borderRadius: "4px" }}>
+                                <p className="is-size-7 has-text-white is-truncated"><b>{s.machine}</b>: {s.name}</p>
+                                <p className={`is-size-7 ${isUrgent ? 'has-text-danger' : 'has-text-warning'}`}>
+                                {minsLeft}:{String(secs).padStart(2, '0')} left
+                                </p>
+                            </div>
+                        </div>
+                    );
+                    })}
+                </div>
+              </div>
 
-            {/* QR SCANNER */}
-            <div className="box" style={{ background: "#000", padding: "10px" }}>
-              <video ref={videoRef} style={{ width: "100%", borderRadius: "10px", border: "2px solid #333" }}></video>
-              <p className="is-size-7 has-text-grey has-text-centered mt-2">Scan Player QR Code</p>
+              {/* QR SCANNER */}
+              <div className="box is-hidden-mobile" style={{ background: "#000", padding: "10px", border: "1px solid #333" }}>
+                <video ref={videoRef} style={{ width: "100%", borderRadius: "10px", objectFit: "cover" }}></video>
+                <p className="is-size-7 has-text-grey has-text-centered mt-2">Scan Player QR Code</p>
+              </div>
             </div>
           </div>
 
-          <div className="column is-8">
+          {/* MAIN PANEL: SEARCH & CONFIGURATOR */}
+          <div className="column is-12-tablet is-8-desktop">
             {/* SEARCH */}
             <div className="box mb-4" style={{ background: "#1a1a1a" }}>
               <form onSubmit={(e) => handlePhoneSearch(e, "primary")} className="field has-addons">
                 <div className="control is-expanded">
-                  <input className="input is-dark" placeholder="Search Player Phone..." value={searchPhone} onChange={(e) => setSearchPhone(e.target.value)} />
+                  <input className="input is-dark" type="tel" placeholder="Search Player Phone..." value={searchPhone} onChange={(e) => setSearchPhone(e.target.value)} />
                 </div>
-                <div className="control"><button type="submit" className="button is-primary">Find Player</button></div>
+                <div className="control"><button type="submit" className="button is-primary">Find</button></div>
               </form>
             </div>
 
             {/* CONFIGURATOR */}
             {userData && (
               <div className="box" style={{ background: "#111", border: "1px solid #00d1b2" }}>
-                <div className="columns">
-                  <div className="column"><h2 className="title is-5 has-text-white">Player: {userData.fullName}</h2></div>
-                  <div className="column has-text-right">
+                <div className="level is-mobile">
+                  <div className="level-left">
+                    <h2 className="title is-5 has-text-white">Player: {userData.fullName}</h2>
+                  </div>
+                  <div className="level-right">
                     <button className="delete" onClick={() => { setUserData(null); setFriendData(null); }}></button>
                   </div>
                 </div>
 
-                {/* Friend Search for Bonuses */}
                 {!friendData && (
                   <form onSubmit={(e) => handlePhoneSearch(e, "friend")} className="field has-addons mt-2">
                     <div className="control is-expanded">
-                      <input className="input is-small is-dark" placeholder="Add Friend' Phone" value={friendPhone} onChange={(e) => setFriendPhone(e.target.value)} />
+                      <input className="input is-small is-dark" placeholder="Add Friend Phone" value={friendPhone} onChange={(e) => setFriendPhone(e.target.value)} />
                     </div>
-                    <div className="control"><button type="submit" className="button is-small is-info">Add Friend</button></div>
+                    <div className="control"><button type="submit" className="button is-small is-info">Add</button></div>
                   </form>
                 )}
-                {friendData && <p className="is-size-7 has-text-info">Friend Added: {friendData.fullName}</p>}
+                {friendData && <p className="is-size-7 has-text-info mb-3">Linked: {friendData.fullName}</p>}
 
-                <div className="columns mt-4">
-                  <div className="column">
+                <div className="columns is-multiline mt-2">
+                  <div className="column is-12-mobile is-6-tablet">
                     <label className="label is-small has-text-grey">STATION</label>
-                    {MACHINES.map(m => (
-                      <button key={m} disabled={activeSessions.some(s => s.machine === m)} className={`button is-small is-fullwidth mb-2 ${selectedMachine === m ? "is-primary" : "is-dark"}`} onClick={() => setSelectedMachine(m)}>
-                        {m}
-                      </button>
-                    ))}
+                    <div className="columns is-mobile is-multiline">
+                        {MACHINES.map(m => (
+                        <div key={m} className="column is-6">
+                            <button disabled={activeSessions.some(s => s.machine === m)} className={`button is-small is-fullwidth ${selectedMachine === m ? "is-primary" : "is-dark"}`} onClick={() => setSelectedMachine(m)}>
+                                {m}
+                            </button>
+                        </div>
+                        ))}
+                    </div>
                   </div>
 
-                  <div className="column">
+                  <div className="column is-12-mobile is-6-tablet">
                     <label className="label is-small has-text-grey">TIME</label>
-                    {[0.25, 0.5, 1, 2].map(h => (
-                      <button key={h} className={`button is-small is-fullwidth mb-2 ${pendingTransaction?.hours === h ? "is-info" : "is-dark"}`}
-                        onClick={() => setPendingTransaction({ hours: h, price: standardPricing?.[String(h)] })}>
-                        {h === 0.25 ? "15m" : `${h}h`} - Rs.{standardPricing?.[String(h)] || "0"}
-                      </button>
-                    ))}
+                    <div className="columns is-mobile is-multiline">
+                        {[0.25, 0.5, 1, 2].map(h => (
+                        <div key={h} className="column is-6">
+                            <button className={`button is-small is-fullwidth ${pendingTransaction?.hours === h ? "is-info" : "is-dark"}`}
+                                onClick={() => setPendingTransaction({ hours: h, price: standardPricing?.[String(h)] })}>
+                                {h === 0.25 ? "15m" : `${h}h`} - {standardPricing?.[String(h)] || "0"}
+                            </button>
+                        </div>
+                        ))}
+                    </div>
 
                     {((userData.rewardClaimed === false) || (friendData && friendData.rewardClaimed === false)) && (
                       <div className="notification is-success is-light p-2 mt-2 is-size-7">
-                        🎁 Bonus Available: {((userData.bonusMinutes || 0) + (friendData?.bonusMinutes || 0))}m
+                        🎁 Bonus: {((userData.bonusMinutes || 0) + (friendData?.bonusMinutes || 0))}m
                       </div>
                     )}
                   </div>
                 </div>
 
                 {pendingTransaction && (
-                  <div className="notification mt-4 is-dark" style={{ border: "1px solid #00d1b2" }}>
-                    <p className="title is-3 has-text-white">Rs. {pendingTransaction.price}</p>
+                  <div className="notification mt-4 is-dark" style={{ border: "1px solid #00d1b2", background: "#161616" }}>
+                    <div className="level is-mobile mb-3">
+                        <div className="level-left"><p className="title is-4 has-text-white">Rs. {pendingTransaction.price}</p></div>
+                        <div className="level-right"><span className="tag is-primary is-light">{selectedMachine}</span></div>
+                    </div>
                     <input className="input is-small is-dark mb-3" placeholder="Lap Time (Optional)" value={lapTime} onChange={(e) => setLapTime(e.target.value)} />
                     <div className="buttons">
                       <button disabled={!selectedMachine || isUpdating} className={`button is-success is-fullwidth ${isUpdating ? 'is-loading' : ''}`} onClick={() => confirmPayment("CASH")}>CASH</button>
@@ -358,57 +360,62 @@ const AdminPanel = () => {
                 )}
               </div>
             )}
-          </div>
-        </div>
 
-        {/* ── TRANSACTIONS HISTORY ── */}
-        <div style={{ marginTop: "32px" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", cursor: "pointer", marginBottom: "16px" }} onClick={() => setTxnPanelOpen(!txnPanelOpen)}>
-            <h2 className="title is-5 has-text-white">💳 Transaction History</h2>
-            <span style={{ color: "#666" }}>{txnPanelOpen ? "▲" : "▼"}</span>
-          </div>
-
-          {txnPanelOpen && (
-            <div>
-              <div className="buttons mb-4">
-                {["today", "week", "month", "all"].map((f) => (
-                  <button key={f} onClick={() => setTxnFilter(f)} className={`button is-small is-rounded ${txnFilter === f ? "is-primary" : "is-dark"}`}>{f}</button>
-                ))}
-              </div>
-
-              <div style={{ background: "linear-gradient(135deg, #00d1b2 0%, #006b5a 100%)", borderRadius: "14px", padding: "18px 24px", marginBottom: "16px" }}>
-                <p style={{ color: "white", fontSize: "0.72rem", fontWeight: 700, textTransform: "uppercase" }}>Total Revenue ({txnFilter})</p>
-                <h2 style={{ color: "white", fontSize: "2rem", fontWeight: 800 }}>Rs. {totalRevenue.toLocaleString()}</h2>
-              </div>
-
-              <div className="box" style={{ background: "#1a1a1a", padding: "0", border: "1px solid #333", overflow: "hidden" }}>
-                <div style={{ overflowX: "auto" }}>
-                  <table className="table is-fullwidth is-dark" style={{ background: "transparent" }}>
-                    <thead>
-                      <tr>
-                        <th>Date</th><th>Player</th><th>Station</th><th>Time</th><th>Method</th><th className="has-text-right">Amount</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredData.map((t, i) => (
-                        <tr key={i} style={{ borderBottom: "1px solid #222" }}>
-                          <td className="is-size-7">{new Date(t.startTime).toLocaleDateString()}</td>
-                          <td className="is-size-7 has-text-weight-bold">{t.players || t.userName}</td>
-                          <td className="is-size-7">{t.machine}</td>
-                          <td className="is-size-7">{t.duration}h</td>
-                          <td className="is-size-7">{t.method}</td>
-                          <td className="has-text-right has-text-weight-bold">Rs. {t.amountPaid}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+            {/* ── TRANSACTIONS HISTORY ── */}
+            <div style={{ marginTop: "2rem" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", cursor: "pointer", marginBottom: "1rem" }} onClick={() => setTxnPanelOpen(!txnPanelOpen)}>
+                    <h2 className="title is-5 has-text-white">💳 Revenue History</h2>
+                    <span style={{ color: "#666" }}>{txnPanelOpen ? "▲" : "▼"}</span>
                 </div>
-              </div>
+
+                {txnPanelOpen && (
+                    <>
+                    <div className="buttons mb-4">
+                        {["today", "week", "month", "all"].map((f) => (
+                        <button key={f} onClick={() => setTxnFilter(f)} className={`button is-small is-rounded ${txnFilter === f ? "is-primary" : "is-dark"}`}>{f}</button>
+                        ))}
+                    </div>
+
+                    <div style={{ background: "linear-gradient(135deg, #00d1b2 0%, #006b5a 100%)", borderRadius: "12px", padding: "1.25rem", marginBottom: "1rem" }}>
+                        <p style={{ color: "white", fontSize: "0.7rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "1px" }}>Total Revenue ({txnFilter})</p>
+                        <h2 style={{ color: "white", fontSize: "1.75rem", fontWeight: 800 }}>Rs. {totalRevenue.toLocaleString()}</h2>
+                    </div>
+
+                    <div className="box" style={{ background: "#1a1a1a", padding: "0", border: "1px solid #333", overflow: "hidden" }}>
+                        <div style={{ overflowX: "auto" }}>
+                        <table className="table is-fullwidth is-dark" style={{ background: "transparent", minWidth: "500px" }}>
+                            <thead>
+                            <tr>
+                                <th>Player</th><th>Station</th><th>Time</th><th>Method</th><th className="has-text-right">Amount</th>
+                            </tr>
+                            </thead>
+                            <tbody>
+                            {filteredData.map((t, i) => (
+                                <tr key={i} style={{ borderBottom: "1px solid #222" }}>
+                                <td className="is-size-7">
+                                    <span className="has-text-weight-bold">{t.players || t.userName}</span><br/>
+                                    <span className="has-text-grey" style={{fontSize: '0.65rem'}}>{new Date(t.startTime).toLocaleDateString()}</span>
+                                </td>
+                                <td className="is-size-7">{t.machine}</td>
+                                <td className="is-size-7">{t.duration}h</td>
+                                <td className="is-size-7">{t.method}</td>
+                                <td className="has-text-right has-text-weight-bold">Rs. {t.amountPaid}</td>
+                                </tr>
+                            ))}
+                            </tbody>
+                        </table>
+                        </div>
+                    </div>
+                    </>
+                )}
             </div>
-          )}
+          </div>
         </div>
       </div>
-      <style>{`@media print { body * { visibility: hidden; } #receipt-print { display: block !important; visibility: visible; position: absolute; left: 0; top: 0; } #receipt-print * { visibility: visible; } }`}</style>
+      <style>{`
+        .is-truncated { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        @media print { body * { visibility: hidden; } #receipt-print { display: block !important; visibility: visible; position: absolute; left: 0; top: 0; } #receipt-print * { visibility: visible; } }
+      `}</style>
     </div>
   );
 };
