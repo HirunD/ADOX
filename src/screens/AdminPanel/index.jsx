@@ -190,7 +190,8 @@ const AdminPanel = () => {
       machine: selectedMachine,
       bestLap: lapTime || null,
       players: playersNames,
-      bonusApplied: (userBonusMins + friendBonusMins) > 0
+      bonusApplied: (userBonusMins + friendBonusMins) > 0,
+      isSingleRace: pendingTransaction.isSingleRace || false
     };
 
     try {
@@ -231,7 +232,7 @@ const AdminPanel = () => {
             <center><h2>ADOX GAMING</h2><p>--- SESSION RECEIPT ---</p></center>
             <p><b>PLAYERS:</b> {receiptData.name}</p>
             <p><b>STATION:</b> {receiptData.machine}</p>
-            <p><b>TIME:</b> {receiptData.duration} Hrs {receiptData.bonus > 0 && `(Incl. ${receiptData.bonus}m Bonus)`}</p>
+            <p><b>TIME:</b> {receiptData.isSingleRace ? "Single Race" : `${receiptData.duration} Hrs`} {receiptData.bonus > 0 && `(Incl. ${receiptData.bonus}m Bonus)`}</p>
             <p><b>METHOD:</b> {receiptData.method}</p>
             <h2 style={{ textAlign: "right" }}>Total: Rs. {receiptData.total}</h2>
           </div>
@@ -325,16 +326,22 @@ const AdminPanel = () => {
                   </div>
 
                   <div className="column is-12-mobile is-6-tablet">
-                    <label className="label is-small has-text-grey">TIME</label>
+                    <label className="label is-small has-text-grey">TIME / RACE</label>
                     <div className="columns is-mobile is-multiline">
                         {[0.25, 0.5, 1, 2].map(h => (
                         <div key={h} className="column is-6">
-                            <button className={`button is-small is-fullwidth ${pendingTransaction?.hours === h ? "is-info" : "is-dark"}`}
-                                onClick={() => setPendingTransaction({ hours: h, price: standardPricing?.[String(h)] })}>
+                            <button className={`button is-small is-fullwidth ${pendingTransaction?.hours === h && !pendingTransaction.isSingleRace ? "is-info" : "is-dark"}`}
+                                onClick={() => setPendingTransaction({ hours: h, price: standardPricing?.[String(h)], isSingleRace: false })}>
                                 {h === 0.25 ? "15m" : `${h}h`} - {standardPricing?.[String(h)] || "0"}
                             </button>
                         </div>
                         ))}
+                        <div className="column is-12">
+                            <button className={`button is-small is-fullwidth ${pendingTransaction?.isSingleRace ? "is-warning" : "is-dark"}`}
+                                onClick={() => setPendingTransaction({ hours: 0.1, price: 150, isSingleRace: true })}>
+                                🏎️ SINGLE RACE - Rs. 150
+                            </button>
+                        </div>
                     </div>
 
                     {((userData.rewardClaimed === false) || (friendData && friendData.rewardClaimed === false)) && (
@@ -397,7 +404,7 @@ const AdminPanel = () => {
                                     <span className="has-text-grey" style={{fontSize: '0.65rem'}}>{new Date(t.startTime).toLocaleDateString()}</span>
                                 </td>
                                 <td className="is-size-7">{t.machine}</td>
-                                <td className="is-size-7">{t.duration}h</td>
+                                <td className="is-size-7">{t.isSingleRace ? "Race" : `${t.duration}h`}</td>
                                 <td className="is-size-7">{t.method}</td>
                                 <td className="has-text-right has-text-weight-bold">Rs. {t.amountPaid}</td>
                                 </tr>
