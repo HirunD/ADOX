@@ -4,7 +4,7 @@ import { signInWithEmailAndPassword } from "firebase/auth";
 import { useNavigate, Link } from "react-router-dom"; 
 
 const LoginPage = () => {
-    const [email, setEmail] = useState("");
+    const [identifier, setIdentifier] = useState(""); // Can be email or phone
     const [password, setPassword] = useState("");
     const [error, setError] = useState("");
     const [loading, setLoading] = useState(false);
@@ -16,14 +16,23 @@ const LoginPage = () => {
         setLoading(true);
         setError("");
 
+        let finalEmail = identifier;
+
+        // Logic: If it's a 10-digit number, treat it as a phone-shadow-email
+        const phoneRegex = /^[0-9]{10}$/;
+        if (phoneRegex.test(identifier)) {
+            finalEmail = `${identifier}@adox.com`;
+        }
+
         try {
-            await signInWithEmailAndPassword(auth, email, password);
+            await signInWithEmailAndPassword(auth, finalEmail, password);
             navigate("/"); 
         } catch (err) {
-            if (err.code === "auth/invalid-credential" || err.code === "auth/user-not-found" || err.code === "auth/wrong-password") {
-                setError("Invalid email or password.");
+            console.error(err.code);
+            if (err.code === "auth/invalid-credential" || err.code === "auth/user-not-found") {
+                setError("Incorrect phone/email or password.");
             } else {
-                setError("Failed to login. Please check your connection.");
+                setError("Login failed. Please check your connection.");
             }
         } finally {
             setLoading(false);
@@ -48,7 +57,7 @@ const LoginPage = () => {
                             >
                                 <div className="has-text-centered mb-6">
                                     <h1 className="title is-3 has-text-white" style={{ letterSpacing: '1px' }}>ADOX PORTAL</h1>
-                                    <p className="subtitle is-6 has-text-grey-light">Sign in to access your pass</p>
+                                    <p className="subtitle is-6 has-text-grey-light">Enter Player ID or Email</p>
                                 </div>
 
                                 {error && (
@@ -58,22 +67,22 @@ const LoginPage = () => {
                                 )}
 
                                 <div className="field">
-                                    <label className="label has-text-grey-light">Email Address</label>
+                                    <label className="label has-text-grey-light is-size-7">PHONE OR EMAIL</label>
                                     <div className="control">
                                         <input
                                             className="input"
                                             style={{ background: '#252525', color: 'white', border: '1px solid #444' }}
-                                            type="email"
-                                            placeholder="e.g. user@adox.com"
-                                            value={email}
-                                            onChange={(e) => setEmail(e.target.value)}
+                                            type="text"
+                                            placeholder="07XXXXXXXX or email"
+                                            value={identifier}
+                                            onChange={(e) => setIdentifier(e.target.value)}
                                             required
                                         />
                                     </div>
                                 </div>
 
                                 <div className="field">
-                                    <label className="label has-text-grey-light">Password</label>
+                                    <label className="label has-text-grey-light is-size-7">PASSWORD</label>
                                     <div className="control">
                                         <input
                                             className="input"
@@ -90,7 +99,7 @@ const LoginPage = () => {
                                 <div className="field mt-6">
                                     <button 
                                         className={`button is-primary is-fullwidth has-text-weight-bold ${loading ? 'is-loading' : ''}`} 
-                                        style={{ height: '50px' }}
+                                        style={{ height: '50px', background: '#00d1b2', color: '#000', border: 'none' }}
                                         type="submit"
                                         disabled={loading}
                                     >

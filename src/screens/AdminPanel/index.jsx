@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from "react";
 import QrScanner from "qr-scanner";
-import { db } from "../../firebase";
+import { auth, db } from "../../firebase"; // Ensure 'auth' is exported from your firebase.js
+import { createUserWithEmailAndPassword } from "firebase/auth";
 import {
   doc, getDoc, updateDoc, arrayUnion, collection, query, where,
-  getDocs, onSnapshot, setDoc
+  getDocs, onSnapshot, setDoc, addDoc
 } from "firebase/firestore";
 
 const AdminPanel = () => {
@@ -23,6 +24,10 @@ const AdminPanel = () => {
   const [sessionCountdowns, setSessionCountdowns] = useState({});
   const [occupiedCount, setOccupiedCount] = useState(0);
 
+  // --- QUICK REGISTER STATE ---
+  const [regForm, setRegForm] = useState({ name: "", phone: "", email: "", age: "" });
+  const [isRegistering, setIsRegistering] = useState(false);
+
   // --- TRANSACTIONS PANEL ---
   const [transactions, setTransactions] = useState([]);
   const [filteredData, setFilteredData] = useState([]);
@@ -37,6 +42,9 @@ const AdminPanel = () => {
   const videoRef = useRef(null);
   const scannerRef = useRef(null);
   const audioRef = useRef(new Audio("/success.mp3"));
+
+  // --- QUICK WALK-IN STATE ---
+  const [quickMachine, setQuickMachine] = useState("");
 
   // --- CAMERA INITIALIZATION ---
   useEffect(() => {
@@ -173,6 +181,66 @@ const AdminPanel = () => {
     } catch (err) { console.error(err); }
   };
 
+  // --- QUICK REGISTER FUNCTION ---
+  const handleQuickRegister = async (e) => {
+    e.preventDefault();
+    if (!regForm.name || !regForm.phone || !regForm.email) return alert("Fill required fields!");
+    setIsRegistering(true);
+    try {
+      const userCredential = await createUserWithEmailAndPassword(auth, regForm.email, "adoxgg");
+      const uid = userCredential.user.uid;
+      const newUserData = {
+        fullName: regForm.name,
+        phone: regForm.phone,
+        email: regForm.email,
+        age: regForm.age,
+        sessions: [],
+        bonusMinutes: 0,
+        rewardClaimed: false,
+        createdAt: new Date().toISOString()
+      };
+      await setDoc(doc(db, "users", uid), newUserData);
+      setUserData({ ...newUserData, uid });
+      setRegForm({ name: "", phone: "", email: "", age: "" });
+      alert("Account Created!");
+    } catch (error) {
+      alert("Error creating account: " + error.message);
+    } finally {
+      setIsRegistering(false);
+    }
+  };
+
+  // --- QUICK CASH FUNCTION ---
+  const handleQuickSession = async (price) => {
+    if (!quickMachine) return alert("Select a machine first!");
+    setIsUpdating(true);
+    const sessionData = {
+      startTime: new Date().toISOString(),
+      duration: 0.25, // 15 mins
+      amountPaid: price,
+      method: "CASH",
+      machine: quickMachine,
+      players: "Guest Walk-in",
+      isQuickSession: true
+    };
+
+    try {
+      const guestRef = doc(db, "users", "guest_walkin"); 
+      await updateDoc(guestRef, {
+        sessions: arrayUnion(sessionData)
+      });
+      
+      setReceiptData({ ...sessionData, name: "Guest", total: price, bonus: 0 });
+      setQuickMachine("");
+      setIsUpdating(false);
+      setTimeout(() => { window.print(); }, 500);
+    } catch (e) {
+      console.error(e);
+      alert("Error saving quick session");
+      setIsUpdating(false);
+    }
+  };
+
   const confirmPayment = async (method) => {
     if (!userData || !pendingTransaction || !selectedMachine) return alert("Missing Info!");
     setIsUpdating(true);
@@ -242,9 +310,45 @@ const AdminPanel = () => {
       <div className="container is-fluid">
         <div className="columns is-multiline">
           
-          {/* SIDEBAR: LIVE STATUS & SCANNER */}
+          {/* SIDEBAR: LIVE STATUS & QUICK WALK-IN */}
           <div className="column is-12-tablet is-4-desktop">
             <div style={{ position: "sticky", top: "1rem" }}>
+              
+              {/* QUICK REGISTER (NEW) */}
+              <div className="box mb-4" style={{ background: "#1a1a1a", border: "1px solid #00d1b2" }}>
+                <h3 className="subtitle is-6 has-text-primary mb-3">🆕 Quick Register Player</h3>
+                <form onSubmit={handleQuickRegister}>
+                  <div className="field">
+                    <input className="input is-small is-dark mb-2" placeholder="Name" value={regForm.name} onChange={(e) => setRegForm({...regForm, name: e.target.value})} required />
+                    <input className="input is-small is-dark mb-2" placeholder="Phone" value={regForm.phone} onChange={(e) => setRegForm({...regForm, phone: e.target.value})} required />
+                    <input className="input is-small is-dark mb-2" placeholder="Email" type="email" value={regForm.email} onChange={(e) => setRegForm({...regForm, email: e.target.value})} required />
+                    <input className="input is-small is-dark mb-3" placeholder="Age" type="number" value={regForm.age} onChange={(e) => setRegForm({...regForm, age: e.target.value})} />
+                    <button type="submit" className={`button is-small is-primary is-fullwidth ${isRegistering ? 'is-loading' : ''}`}>Create Account</button>
+                  </div>
+                </form>
+              </div>
+
+              {/* QUICK WALK-IN */}
+              <div className="box mb-4" style={{ background: "#1a1a1a", border: "1px solid #ffdd57" }}>
+                <h3 className="subtitle is-6 has-text-warning mb-3">⚡ Quick Walk-In (15 mins)</h3>
+                <div className="field">
+                  <div className="control">
+                    <div className="select is-small is-fullwidth is-dark">
+                      <select value={quickMachine} onChange={(e) => setQuickMachine(e.target.value)}>
+                        <option value="">Select Station</option>
+                        {MACHINES.map(m => (
+                          <option key={m} value={m}>{m}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                </div>
+                <div className="buttons">
+                  <button disabled={isUpdating || !quickMachine} onClick={() => handleQuickSession(150)} className="button is-small is-warning is-light is-fullwidth">Rs. 150 Cash</button>
+                  <button disabled={isUpdating || !quickMachine} onClick={() => handleQuickSession(300)} className="button is-small is-warning is-fullwidth">Rs. 300 Cash</button>
+                </div>
+              </div>
+
               {/* LIVE STATUS */}
               <div className="box mb-4" style={{ background: "#1a1a1a", border: "1px solid #333" }}>
                 <h3 className="subtitle is-6 has-text-white mb-3">Live Stations ({occupiedCount}/{TOTAL_CAPACITY})</h3>
@@ -401,7 +505,9 @@ const AdminPanel = () => {
                                 <tr key={i} style={{ borderBottom: "1px solid #222" }}>
                                 <td className="is-size-7">
                                     <span className="has-text-weight-bold">{t.players || t.userName}</span><br/>
-                                    <span className="has-text-grey" style={{fontSize: '0.65rem'}}>{new Date(t.startTime).toLocaleDateString()}</span>
+                                    <span className="has-text-grey" style={{fontSize: '0.65rem'}}>
+                                        {new Date(t.startTime).toLocaleDateString()} | {new Date(t.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                    </span>
                                 </td>
                                 <td className="is-size-7">{t.machine}</td>
                                 <td className="is-size-7">{t.isSingleRace ? "Race" : `${t.duration}h`}</td>

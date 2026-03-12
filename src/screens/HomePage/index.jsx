@@ -30,7 +30,6 @@ const HomePage = () => {
     const [authLoading, setAuthLoading] = useState(true);
     const [showAvatarPicker, setShowAvatarPicker] = useState(false);
 
-    // Set to 5 physical active stations
     const TOTAL_STATIONS = 5; 
     const avatars = ["1.png", "2.png", "3.png", "4.png", "5.png", "6.png"];
 
@@ -51,18 +50,14 @@ const HomePage = () => {
                 const data = userDoc.data();
                 if (data.sessions) {
                     data.sessions.forEach(s => {
-                        // FILTER: Ignore PS4 #3 as it is for admin exceptions/mistakes only
                         if (s.machine === "PS4 #3") return;
-
                         const start = new Date(s.startTime);
                         const durationHrs = parseFloat(s.duration) || 0;
                         const end = new Date(start.getTime() + (durationHrs * 3600000));
 
-                        // Check if session is currently active
                         if (now >= start && now < end) {
                             const diffMs = end - now;
                             const diffMins = Math.round(diffMs / 60000);
-
                             activeSessions.push({
                                 name: (s.players || data.fullName).split(' ')[0],
                                 machine: s.machine,
@@ -74,7 +69,6 @@ const HomePage = () => {
                     });
                 }
             });
-            // Sort by sessions ending soonest
             setLivePlayers(activeSessions.sort((a, b) => a.timeLeft - b.timeLeft));
         });
 
@@ -196,6 +190,22 @@ const HomePage = () => {
                 </div>
             )}
 
+
+            {/* NEW BOOKING BANNER */}
+            <div className="interface-box" style={{ background: 'linear-gradient(145deg, #25D366 0%, #128C7E 100%)', border: 'none', textAlign: 'center' }}>
+                <p className="is-size-7 is-uppercase has-text-weight-bold" style={{ color: 'rgba(255,255,255,0.9)', marginBottom: '5px' }}>Instant Reservation</p>
+                <h3 className="title is-5 has-text-white mb-3">Book Your Session</h3>
+                <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
+                    <a href="https://wa.me/947XXXXXXXX" target="_blank" rel="noreferrer" className="button is-white is-small is-rounded has-text-weight-bold" style={{ color: '#128C7E' }}>
+                        <span>WHATSAPP</span>
+                    </a>
+                    <a href="tel:+947XXXXXXXX" className="button is-white is-outlined is-small is-rounded has-text-weight-bold">
+                        <span>CALL NOW</span>
+                    </a>
+                </div>
+            </div>
+
+
             {!user && (
                 <div className="has-text-centered mt-4">
                     <Link to="/login" className="button is-primary is-outlined is-small is-rounded px-5">LOGIN TO START</Link>
@@ -207,6 +217,7 @@ const HomePage = () => {
                     <button onClick={() => signOut(auth)} className="button is-ghost is-small has-text-grey">Log Out</button>
                 </div>
             )}
+            
         </div>
     );
 };
