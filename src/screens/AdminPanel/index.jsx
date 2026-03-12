@@ -200,9 +200,12 @@ const AdminPanel = () => {
         createdAt: new Date().toISOString()
       };
       await setDoc(doc(db, "users", uid), newUserData);
+      
+      // AUTO-FILL FOR BILLING
       setUserData({ ...newUserData, uid });
+      
       setRegForm({ name: "", phone: "", email: "", age: "" });
-      alert("Account Created!");
+      alert("Account Created & Loaded for Billing!");
     } catch (error) {
       alert("Error creating account: " + error.message);
     } finally {
