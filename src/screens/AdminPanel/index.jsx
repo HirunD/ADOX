@@ -213,37 +213,38 @@ const AdminPanel = () => {
     }
   };
 
-  // --- QUICK CASH FUNCTION ---
-  const handleQuickSession = async (price) => {
-    if (!quickMachine) return alert("Select a machine first!");
-    setIsUpdating(true);
-    const sessionData = {
-      startTime: new Date().toISOString(),
-      duration: 0.25, // 15 mins
-      amountPaid: price,
-      method: "CASH",
-      machine: quickMachine,
-      players: "Guest Walk-in",
-      isQuickSession: true
-    };
-
-    try {
-      const guestRef = doc(db, "users", "guest_walkin"); 
-      await updateDoc(guestRef, {
-        sessions: arrayUnion(sessionData)
-      });
-      
-      setReceiptData({ ...sessionData, name: "Guest", total: price, bonus: 0 });
-      setQuickMachine("");
-      setIsUpdating(false);
-      setTimeout(() => { window.print(); }, 500);
-    } catch (e) {
-      console.error(e);
-      alert("Error saving quick session");
-      setIsUpdating(false);
-    }
+// --- QUICK CASH FUNCTION ---
+const handleQuickSession = async (price) => {
+  setIsUpdating(true);
+  const sessionData = {
+    startTime: new Date().toISOString(),
+    duration: 0.25, // 15 mins
+    amountPaid: price,
+    method: "CASH",
+    machine: "Quick Cash", // Hardcoded since station info is deleted
+    players: "Guest Walk-in",
+    isQuickSession: true
   };
 
+  try {
+    const guestRef = doc(db, "users", "guest_walkin"); 
+    await setDoc(guestRef, {
+      sessions: arrayUnion(sessionData)
+    }, { merge: true });
+    
+    setReceiptData({ ...sessionData, name: "Guest", total: price, bonus: 0 });
+    setIsUpdating(false);
+    
+    // Slight delay to ensure receiptData is set before printing
+    setTimeout(() => { 
+      window.print(); 
+    }, 500);
+  } catch (e) {
+    console.error(e);
+    alert("Error saving quick session");
+    setIsUpdating(false);
+  }
+};
   const confirmPayment = async (method) => {
     if (!userData || !pendingTransaction || !selectedMachine) return alert("Missing Info!");
     setIsUpdating(true);
@@ -330,28 +331,33 @@ const AdminPanel = () => {
                   </div>
                 </form>
               </div>
-
-              {/* QUICK WALK-IN */}
-              <div className="box mb-4" style={{ background: "#1a1a1a", border: "1px solid #ffdd57" }}>
-                <h3 className="subtitle is-6 has-text-warning mb-3">⚡ Quick Walk-In (15 mins)</h3>
-                <div className="field">
-                  <div className="control">
-                    <div className="select is-small is-fullwidth is-dark">
-                      <select value={quickMachine} onChange={(e) => setQuickMachine(e.target.value)}>
-                        <option value="">Select Station</option>
-                        {MACHINES.map(m => (
-                          <option key={m} value={m}>{m}</option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-                </div>
-                <div className="buttons">
-                  <button disabled={isUpdating || !quickMachine} onClick={() => handleQuickSession(150)} className="button is-small is-warning is-light is-fullwidth">Rs. 150 Cash</button>
-                  <button disabled={isUpdating || !quickMachine} onClick={() => handleQuickSession(300)} className="button is-small is-warning is-fullwidth">Rs. 300 Cash</button>
-                </div>
-              </div>
-
+{/* QUICK WALK-IN */}
+<div className="box mb-4" style={{ background: "#1a1a1a", border: "1px solid #ffdd57" }}>
+  <h3 className="subtitle is-6 has-text-warning mb-3">⚡ Quick Walk-In (15 mins)</h3>
+  <div className="columns is-mobile">
+    <div className="column">
+      <button 
+        disabled={isUpdating} 
+        onClick={() => handleQuickSession(150)} 
+        className={`button is-small is-warning is-light is-fullwidth ${isUpdating ? 'is-loading' : ''}`}
+      >
+        Rs. 150
+      </button>
+    </div>
+    <div className="column">
+      <button 
+        disabled={isUpdating} 
+        onClick={() => handleQuickSession(300)} 
+        className={`button is-small is-warning is-fullwidth ${isUpdating ? 'is-loading' : ''}`}
+      >
+        Rs. 300
+      </button>
+    </div>
+  </div>
+  <p className="is-size-7 has-text-grey-light has-text-centered">
+    Instant Cash + Receipt
+  </p>
+</div>
               {/* LIVE STATUS */}
               <div className="box mb-4" style={{ background: "#1a1a1a", border: "1px solid #333" }}>
                 <h3 className="subtitle is-6 has-text-white mb-3">Live Stations ({occupiedCount}/{TOTAL_CAPACITY})</h3>
