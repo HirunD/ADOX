@@ -81,6 +81,53 @@ const TransactionsPage = () => {
         </div>
     );
 
+
+    const exportToCSV = () => {
+    if (filteredData.length === 0) return alert("No data to export");
+
+    // 1. Get all unique keys across all transactions to ensure no data is missed
+    const allKeys = new Set();
+    filteredData.forEach(item => Object.keys(item).forEach(key => allKeys.add(key)));
+    const headers = Array.from(allKeys);
+
+    // 2. Build the CSV content
+    const csvRows = [];
+    
+    // Add Header Row
+    csvRows.push(headers.join(","));
+
+    // Add Data Rows
+    for (const row of filteredData) {
+        const values = headers.map(header => {
+            let val = row[header];
+            
+            // Handle null/undefined
+            if (val === null || val === undefined) return "";
+
+            // Format Dates for Excel/Sheets readability
+            if (header.toLowerCase().includes("time") && !isNaN(Date.parse(val))) {
+                val = new Date(val).toLocaleString().replace(/,/g, ""); 
+            }
+
+            // Clean strings to prevent CSV breaking (quotes and commas)
+            const stringVal = String(val).replace(/"/g, '""');
+            return `"${stringVal}"`;
+        });
+        csvRows.push(values.join(","));
+    }
+
+    // 3. Create blob and download
+    const blob = new Blob([csvRows.join("\n")], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `Adox_Full_Report_${filter}_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = "hidden";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+};
+
     return (
         <div style={{ background: "#080808", minHeight: "100vh", color: "white", padding: "16px" }}>
             <style>{`
@@ -109,6 +156,43 @@ const TransactionsPage = () => {
                         <p style={{ color: "#00d1b2", fontSize: "0.8rem" }}>Track your earnings and play history</p>
                     </div>
                     <div className="txn-filters">
+                        <div className="txn-filters">
+    {/* The New Export Button */}
+    <button
+        onClick={exportToCSV}
+        style={{
+            padding: "6px 14px", 
+            borderRadius: "20px", 
+            border: "1px solid #00d1b2", 
+            cursor: "pointer", 
+            fontSize: "0.8rem", 
+            fontWeight: 600, 
+            background: "transparent", 
+            color: "#00d1b2",
+            marginRight: "10px",
+            transition: "0.2s"
+        }}
+        onMouseOver={(e) => e.target.style.background = "rgba(0, 209, 178, 0.1)"}
+        onMouseOut={(e) => e.target.style.background = "transparent"}
+    >
+        📥 Export All Data
+    </button>
+
+    {["today", "week", "month", "all"].map((f) => (
+        <button
+            key={f}
+            style={{
+                padding: "6px 14px", borderRadius: "20px", border: "none", cursor: "pointer", fontSize: "0.8rem", fontWeight: 600, textTransform: "capitalize",
+                background: filter === f ? "#00d1b2" : "#2a2a2a",
+                color: filter === f ? "#000" : "#aaa"
+            }}
+            onClick={() => setFilter(f)}
+        >
+            {f}
+        </button>
+    ))}
+</div>
+                    
                         {["today", "week", "month", "all"].map((f) => (
                             <button
                                 key={f}

@@ -33,6 +33,67 @@ const PlayerReport = () => {
 
     const totalHours = monthlySessions.reduce((acc, s) => acc + parseFloat(s.duration), 0);
 
+
+
+    const exportToCSV = () => {
+    if (!userData) return;
+
+    // 1. Define the base player info
+    const playerBaseInfo = {
+        fullName: userData.fullName,
+        email: userData.email || "N/A",
+        phone: userData.phone || "N/A",
+        school: userData.school || "N/A",
+        age: userData.age || "N/A",
+        uid: uid,
+        totalHoursPlayed: totalHours,
+        accountCreatedAt: userData.createdAt || "N/A"
+    };
+
+    // 2. Identify all possible session keys to ensure no hidden data is missed
+    const allSessionKeys = new Set();
+    const sessions = userData.sessions || [];
+    sessions.forEach(s => Object.keys(s).forEach(key => allSessionKeys.add(key)));
+    const sessionHeaders = Array.from(allSessionKeys);
+
+    // 3. Create the CSV rows
+    // Combined Header: Player Info + every possible Session key
+    const headers = [...Object.keys(playerBaseInfo), ...sessionHeaders];
+    const csvRows = [headers.join(",")];
+
+    if (sessions.length > 0) {
+        sessions.forEach(session => {
+            const row = headers.map(header => {
+                // If the header is a base player info field
+                let val = playerBaseInfo[header] !== undefined ? playerBaseInfo[header] : session[header];
+                
+                if (val === null || val === undefined) return "";
+
+                // Format dates for cleaner spreadsheets
+                if (typeof val === "string" && !isNaN(Date.parse(val)) && val.includes("T")) {
+                    val = new Date(val).toLocaleString().replace(/,/g, "");
+                }
+
+                // Clean string for CSV safety
+                return `"${String(val).replace(/"/g, '""')}"`;
+            });
+            csvRows.push(row.join(","));
+        });
+    } else {
+        // Just export player info if no sessions exist
+        csvRows.push(Object.values(playerBaseInfo).map(v => `"${v}"`).join(","));
+    }
+
+    // 4. Trigger Download
+    const blob = new Blob([csvRows.join("\n")], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.setAttribute("download", `Report_${userData.fullName.replace(/\s+/g, '_')}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+};
     return (
         <section className="section has-background-white-bis" style={{ minHeight: '100vh' }}>
             <div className="container" style={{ maxWidth: '800px' }}>
@@ -42,6 +103,14 @@ const PlayerReport = () => {
                         <button className="button is-small" onClick={() => navigate(-1)}>← Back</button>
                     </div>
                     <div className="level-right">
+                        <div className="level-right">
+    <button className="button is-small is-info is-light mr-2" onClick={exportToCSV}>
+        📥 Export All Data (CSV)
+    </button>
+    <button className="button is-small is-dark" onClick={() => window.print()}>
+        Print PDF
+    </button>
+</div>
                         <button className="button is-small is-dark" onClick={() => window.print()}>Print PDF</button>
                     </div>
                 </div>
