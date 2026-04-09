@@ -193,19 +193,6 @@ const TransactionsPage = () => {
     ))}
 </div>
                     
-                        {["today", "week", "month", "all"].map((f) => (
-                            <button
-                                key={f}
-                                style={{
-                                    padding: "6px 14px", borderRadius: "20px", border: "none", cursor: "pointer", fontSize: "0.8rem", fontWeight: 600, textTransform: "capitalize",
-                                    background: filter === f ? "#00d1b2" : "#2a2a2a",
-                                    color: filter === f ? "#000" : "#aaa"
-                                }}
-                                onClick={() => setFilter(f)}
-                            >
-                                {f}
-                            </button>
-                        ))}
                     </div>
                 </div>
 
