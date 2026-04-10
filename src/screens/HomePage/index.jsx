@@ -196,10 +196,10 @@ const HomePage = () => {
                 <p className="is-size-7 is-uppercase has-text-weight-bold" style={{ color: 'rgba(255,255,255,0.9)', marginBottom: '5px' }}>Instant Reservation</p>
                 <h3 className="title is-5 has-text-white mb-3">Book Your Session</h3>
                 <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
-                    <a href="https://wa.me/947XXXXXXXX" target="_blank" rel="noreferrer" className="button is-white is-small is-rounded has-text-weight-bold" style={{ color: '#128C7E' }}>
+                    <a href="https://wa.me/94778662814" target="_blank" rel="noreferrer" className="button is-white is-small is-rounded has-text-weight-bold" style={{ color: '#128C7E' }}>
                         <span>WHATSAPP</span>
                     </a>
-                    <a href="tel:+947XXXXXXXX" className="button is-white is-outlined is-small is-rounded has-text-weight-bold">
+                    <a href="tel:+94778662814" className="button is-white is-outlined is-small is-rounded has-text-weight-bold">
                         <span>CALL NOW</span>
                     </a>
                 </div>
