@@ -709,53 +709,74 @@ const AdminPanel = () => {
                   </div>
 
                   <div className="column is-12-mobile is-6-tablet">
-                    <label className="label is-small has-text-grey">
-                      TIME / RACE
-                    </label>
-                    <div className="columns is-mobile is-multiline">
-                      {[0.25, 0.5, 1, 2].map((h) => (
-                        <div key={h} className="column is-6">
-                          <button
-                            className={`button is-small is-fullwidth ${pendingTransaction?.hours === h && !pendingTransaction.isSingleRace ? "is-info" : "is-dark"}`}
-                            onClick={() =>
-                              setPendingTransaction({
-                                hours: h,
-                                price: standardPricing?.[String(h)],
-                                isSingleRace: false,
-                              })
-                            }
-                          >
-                            {h === 0.25 ? "15m" : `${h}h`} -{" "}
-                            {standardPricing?.[String(h)] || "0"}
-                          </button>
-                        </div>
-                      ))}
-                      <div className="column is-12">
-                        <button
-                          className={`button is-small is-fullwidth ${pendingTransaction?.isSingleRace ? "is-warning" : "is-dark"}`}
-                          onClick={() =>
-                            setPendingTransaction({
-                              hours: 0.1,
-                              price: 150,
-                              isSingleRace: true,
-                            })
-                          }
-                        >
-                          🏎️ SINGLE RACE - Rs. 150
-                        </button>
-                      </div>
-                    </div>
+  <label className="label is-small has-text-grey">TIME / RACE</label>
+  <div className="columns is-mobile is-multiline">
+    {/* Standard Pricing Buttons */}
+    {[0.25, 0.5, 1, 2].map((h) => (
+      <div key={h} className="column is-6">
+        <button
+          className={`button is-small is-fullwidth ${pendingTransaction?.hours === h && !pendingTransaction.isCustom ? "is-info" : "is-dark"}`}
+          onClick={() =>
+            setPendingTransaction({
+              hours: h,
+              price: standardPricing?.[String(h)],
+              isSingleRace: false,
+              isCustom: false
+            })
+          }
+        >
+          {h === 0.25 ? "15m" : `${h}h`} - {standardPricing?.[String(h)] || "0"}
+        </button>
+      </div>
+    ))}
 
-                    {(userData.rewardClaimed === false ||
-                      (friendData && friendData.rewardClaimed === false)) && (
-                      <div className="notification is-success is-light p-2 mt-2 is-size-7">
-                        🎁 Bonus:{" "}
-                        {(userData.bonusMinutes || 0) +
-                          (friendData?.bonusMinutes || 0)}
-                        m
-                      </div>
-                    )}
-                  </div>
+    {/* Custom Hourly Billing Button */}
+    <div className="column is-12">
+      <button
+        className={`button is-small is-fullwidth is-dashed ${pendingTransaction?.isCustom ? "is-primary" : "is-dark"}`}
+        style={{ border: "1px dashed #00d1b2" }}
+        onClick={() => {
+          const h = parseFloat(prompt("Enter total hours:", "5"));
+          if (!h || isNaN(h)) return;
+
+          // Calculation Logic: 1500 for first 2h, 750 per hour after
+          let calculatedPrice = 0;
+          if (h <= 2) {
+            calculatedPrice = (1500 / 2) * h; // Pro-rated if under 2h
+          } else {
+            calculatedPrice = 1500 + (h - 2) * 750;
+          }
+
+          setPendingTransaction({
+            hours: h,
+            price: calculatedPrice,
+            isSingleRace: false,
+            isCustom: true
+          });
+        }}
+      >
+        ➕ Custom Duration (750/hr after 2h)
+      </button>
+    </div>
+
+    {/* Single Race Button */}
+    <div className="column is-12">
+      <button
+        className={`button is-small is-fullwidth ${pendingTransaction?.isSingleRace ? "is-warning" : "is-dark"}`}
+        onClick={() =>
+          setPendingTransaction({
+            hours: 0.1,
+            price: 150,
+            isSingleRace: true,
+            isCustom: false
+          })
+        }
+      >
+        🏎️ SINGLE RACE - Rs. 150
+      </button>
+    </div>
+  </div>
+</div>
                 </div>
 
                 {pendingTransaction && (
