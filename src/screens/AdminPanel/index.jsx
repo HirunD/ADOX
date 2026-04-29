@@ -413,6 +413,29 @@ const AdminPanel = () => {
         padding: "1.5rem 0.75rem",
       }}
     >
+      {/* ADMIN NAVIGATION HEADER */}
+<div className="tabs is-boxed mb-5">
+  <ul style={{ borderBottomColor: '#333' }}>
+    <li className="is-active">
+      <a style={{ background: '#1a1a1a', color: '#00d1b2', borderColor: '#333' }}>
+        <span className="icon is-small"><i className="fas fa-terminal"></i></span>
+        <span>Console</span>
+      </a>
+    </li>
+    <li>
+      <a href="/admin/analytics" style={{ color: '#fff' }}>
+        <span className="icon is-small"><i className="fas fa-chart-line"></i></span>
+        <span>Analytics</span>
+      </a>
+    </li>
+    <li>
+      <a href="/users" style={{ color: '#fff' }}>
+        <span className="icon is-small"><i className="fas fa-users"></i></span>
+        <span>Player DB</span>
+      </a>
+    </li>
+  </ul>
+</div>
       {/* RECEIPT PRINTING AREA */}
       <div id="receipt-print" style={{ display: "none" }}>
         {receiptData && (
@@ -955,6 +978,7 @@ const AdminPanel = () => {
           </div>
         </div>
       </div>
+      
       <style>{`
         .is-truncated { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         @media print { body * { visibility: hidden; } #receipt-print { display: block !important; visibility: visible; position: absolute; left: 0; top: 0; } #receipt-print * { visibility: visible; } }
