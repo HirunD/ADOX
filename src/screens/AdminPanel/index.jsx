@@ -161,69 +161,69 @@ const AdminPanel = () => {
     };
   }, []);
 
-useEffect(() => {
-  const now = new Date();
-  
-  // 1. Filter Sessions (Usage Revenue)
-  const filteredSessions = transactions.filter((t) => {
-    const tDate = new Date(t.startTime);
-    if (txnFilter === "today") return tDate.toDateString() === now.toDateString();
-    if (txnFilter === "week") {
-      const wAgo = new Date();
-      wAgo.setDate(now.getDate() - 7);
-      return tDate >= wAgo;
-    }
-    if (txnFilter === "month") return tDate.getMonth() === now.getMonth() && tDate.getFullYear() === now.getFullYear();
-    return true;
-  });
+  useEffect(() => {
+    const now = new Date();
 
-  // 2. Fetch & Filter Membership Invoices
-  const syncInvoices = async () => {
-    const invRef = collection(db, "invoices");
-    const q = query(invRef);
-    const snap = await getDocs(q);
-    
-    let invTotal = 0;
-    let periodInvoices = [];
-
-    snap.forEach(doc => {
-      const data = doc.data();
-      const iDate = data.timestamp?.toDate() || new Date(data.timestamp);
-      
-      let matches = false;
-      if (txnFilter === "today") matches = iDate.toDateString() === now.toDateString();
-      else if (txnFilter === "week") {
-        const wAgo = new Date(); wAgo.setDate(now.getDate() - 7);
-        matches = iDate >= wAgo;
+    // 1. Filter Sessions (Usage Revenue)
+    const filteredSessions = transactions.filter((t) => {
+      const tDate = new Date(t.startTime);
+      if (txnFilter === "today") return tDate.toDateString() === now.toDateString();
+      if (txnFilter === "week") {
+        const wAgo = new Date();
+        wAgo.setDate(now.getDate() - 7);
+        return tDate >= wAgo;
       }
-      else if (txnFilter === "month") matches = iDate.getMonth() === now.getMonth();
-      else matches = true;
-
-      if (matches) {
-        invTotal += (Number(data.amountPaid) || 0);
-        periodInvoices.push({
-          ...data,
-          isInvoice: true,
-          startTime: iDate.toISOString(), // For sorting in the list
-          players: data.userName,
-          machine: "Membership"
-        });
-      }
+      if (txnFilter === "month") return tDate.getMonth() === now.getMonth() && tDate.getFullYear() === now.getFullYear();
+      return true;
     });
 
-    // 3. Combine both for display and total
-    const sessionRev = filteredSessions.reduce((sum, t) => sum + (Number(t.amountPaid) || 0), 0);
-    setTotalRevenue(sessionRev + invTotal);
-    
-    // Sort combined data by time so memberships show up in the history list
-    const combined = [...filteredSessions, ...periodInvoices].sort(
-      (a, b) => new Date(b.startTime) - new Date(a.startTime)
-    );
-    setFilteredData(combined);
-  };
+    // 2. Fetch & Filter Membership Invoices
+    const syncInvoices = async () => {
+      const invRef = collection(db, "invoices");
+      const q = query(invRef);
+      const snap = await getDocs(q);
 
-  syncInvoices();
-}, [transactions, txnFilter]);
+      let invTotal = 0;
+      let periodInvoices = [];
+
+      snap.forEach(doc => {
+        const data = doc.data();
+        const iDate = data.timestamp?.toDate() || new Date(data.timestamp);
+
+        let matches = false;
+        if (txnFilter === "today") matches = iDate.toDateString() === now.toDateString();
+        else if (txnFilter === "week") {
+          const wAgo = new Date(); wAgo.setDate(now.getDate() - 7);
+          matches = iDate >= wAgo;
+        }
+        else if (txnFilter === "month") matches = iDate.getMonth() === now.getMonth();
+        else matches = true;
+
+        if (matches) {
+          invTotal += (Number(data.amountPaid) || 0);
+          periodInvoices.push({
+            ...data,
+            isInvoice: true,
+            startTime: iDate.toISOString(), // For sorting in the list
+            players: data.userName,
+            machine: "Membership"
+          });
+        }
+      });
+
+      // 3. Combine both for display and total
+      const sessionRev = filteredSessions.reduce((sum, t) => sum + (Number(t.amountPaid) || 0), 0);
+      setTotalRevenue(sessionRev + invTotal);
+
+      // Sort combined data by time so memberships show up in the history list
+      const combined = [...filteredSessions, ...periodInvoices].sort(
+        (a, b) => new Date(b.startTime) - new Date(a.startTime)
+      );
+      setFilteredData(combined);
+    };
+
+    syncInvoices();
+  }, [transactions, txnFilter]);
 
   const alertedSessions = useRef(new Set());
   useEffect(() => {
@@ -344,92 +344,92 @@ useEffect(() => {
       setIsUpdating(false);
     }
   };
-const confirmPayment = async (method) => {
-  if (!userData || !pendingTransaction || !selectedMachine)
-    return alert("Missing Info!");
+  const confirmPayment = async (method) => {
+    if (!userData || !pendingTransaction || !selectedMachine)
+      return alert("Missing Info!");
 
-  setIsUpdating(true);
+    setIsUpdating(true);
 
-  // 1. Calculate Bonus Time
-  const userBonusMins =
-    !userData.isGuest && userData.rewardClaimed === false
-      ? userData.bonusMinutes || 0
-      : 0;
-  const friendBonusMins =
-    friendData && friendData.rewardClaimed === false
-      ? friendData.bonusMinutes || 0
-      : 0;
-  
-  const finalDuration = pendingTransaction.hours + (userBonusMins + friendBonusMins) / 60;
+    // 1. Calculate Bonus Time
+    const userBonusMins =
+      !userData.isGuest && userData.rewardClaimed === false
+        ? userData.bonusMinutes || 0
+        : 0;
+    const friendBonusMins =
+      friendData && friendData.rewardClaimed === false
+        ? friendData.bonusMinutes || 0
+        : 0;
 
-  // 2. REVENUE LOGIC: Use the price from pendingTransaction (already discounted by 40% if member)
-  const finalAmount = Number(pendingTransaction.price); 
+    const finalDuration = pendingTransaction.hours + (userBonusMins + friendBonusMins) / 60;
 
-  const playersNames = friendData
-    ? `${userData.fullName} & ${friendData.fullName}`
-    : userData.fullName;
+    // 2. REVENUE LOGIC: Use the price from pendingTransaction (already discounted by 40% if member)
+    const finalAmount = Number(pendingTransaction.price);
 
-  const sessionData = {
-    startTime: new Date().toISOString(),
-    duration: finalDuration,
-    amountPaid: finalAmount, // This records the actual revenue after discount
-    method,
-    machine: selectedMachine,
-    bestLap: lapTime || null,
-    players: playersNames,
-    bonusApplied: userBonusMins + friendBonusMins > 0,
-    isSingleRace: pendingTransaction.isSingleRace || false,
-    isMemberSession: userData.isMember || false, // Tagging it for future analytics
-    originalPrice: pendingTransaction.originalPrice || finalAmount // Track the 'loss' if you want
-  };
+    const playersNames = friendData
+      ? `${userData.fullName} & ${friendData.fullName}`
+      : userData.fullName;
 
-  try {
-    const userRef = doc(
-      db,
-      userData.isGuest ? "guests" : "users",
-      userData.uid,
-    );
+    const sessionData = {
+      startTime: new Date().toISOString(),
+      duration: finalDuration,
+      amountPaid: finalAmount, // This records the actual revenue after discount
+      method,
+      machine: selectedMachine,
+      bestLap: lapTime || null,
+      players: playersNames,
+      bonusApplied: userBonusMins + friendBonusMins > 0,
+      isSingleRace: pendingTransaction.isSingleRace || false,
+      isMemberSession: userData.isMember || false, // Tagging it for future analytics
+      originalPrice: pendingTransaction.originalPrice || finalAmount // Track the 'loss' if you want
+    };
 
-    if (userData.isGuest) {
-      await setDoc(userRef, { ...userData, session: sessionData });
-    } else {
-      await updateDoc(userRef, {
-        sessions: arrayUnion(sessionData),
-        rewardClaimed: true,
+    try {
+      const userRef = doc(
+        db,
+        userData.isGuest ? "guests" : "users",
+        userData.uid,
+      );
+
+      if (userData.isGuest) {
+        await setDoc(userRef, { ...userData, session: sessionData });
+      } else {
+        await updateDoc(userRef, {
+          sessions: arrayUnion(sessionData),
+          rewardClaimed: true,
+        });
+      }
+
+      if (friendData) {
+        const friendRef = doc(db, "users", friendData.uid);
+        await updateDoc(friendRef, { rewardClaimed: true });
+      }
+
+      // Update receipt with the actual paid amount
+      setReceiptData({
+        ...sessionData,
+        name: playersNames,
+        total: finalAmount,
+        bonus: userBonusMins + friendBonusMins,
       });
-    }
 
-    if (friendData) {
-      const friendRef = doc(db, "users", friendData.uid);
-      await updateDoc(friendRef, { rewardClaimed: true });
-    }
-
-    // Update receipt with the actual paid amount
-    setReceiptData({
-      ...sessionData,
-      name: playersNames,
-      total: finalAmount,
-      bonus: userBonusMins + friendBonusMins,
-    });
-
-    setTimeout(() => {
-      window.print();
-      setUserData(null);
-      setFriendData(null);
-      setPendingTransaction(null);
-      setSelectedMachine("");
+      setTimeout(() => {
+        window.print();
+        setUserData(null);
+        setFriendData(null);
+        setPendingTransaction(null);
+        setSelectedMachine("");
+        setIsUpdating(false);
+        setLapTime("");
+      }, 800);
+    } catch (e) {
+      alert("Save Error");
       setIsUpdating(false);
-      setLapTime("");
-    }, 800);
-  } catch (e) {
-    alert("Save Error");
-    setIsUpdating(false);
-  }
-};
+    }
+  };
 
   const FEE = 1000;
   const VALID_DAYS = 30;
-  const MEMBER_DISCOUNT = 0.40; // 40% OFF
+  const MEMBER_DISCOUNT = 0.50; // 40% OFF
 
   // Helper to calculate price based on membership
   const calculateFinalPrice = (basePrice) => {
@@ -494,7 +494,7 @@ const confirmPayment = async (method) => {
               <span>Analytics</span>
             </a>
           </li>
-           <li>
+          <li>
             <a href="/members" style={{ color: '#fff' }}>
               <span className="icon is-small"><i className="fas fa-chart-line"></i></span>
               <span>Members Sign up</span>
@@ -804,7 +804,7 @@ const confirmPayment = async (method) => {
                   </div>
                   <div className="column is-12-mobile is-6-tablet">
                     <label className="label is-small has-text-grey">
-                      TIME / RACE {userData?.isMember && <span className="tag is-danger is-pulled-right">40% MEMBER OFF</span>}
+                      TIME / RACE {userData?.isMember && <span className="tag is-danger is-pulled-right">50% MEMBER OFF</span>}
                     </label>
                     <div className="columns is-mobile is-multiline">
                       {/* Standard Pricing Buttons */}
@@ -885,78 +885,78 @@ const confirmPayment = async (method) => {
                 </div>
 
                 {pendingTransaction && (
-  <div
-    className="notification mt-4 is-dark"
-    style={{
-      border: userData?.isMember ? "1px solid #ff3860" : "1px solid #00d1b2",
-      background: "#161616",
-    }}
-  >
-    <div className="level is-mobile mb-3">
-      <div className="level-left">
-        <div>
-          <p className="is-size-7 has-text-grey heading mb-1">
-            Total Amount {userData?.isMember && "(Member Rate)"}
-          </p>
-          <p className="title is-4 has-text-white mb-0">
-            Rs. {pendingTransaction.price}
-          </p>
-          {userData?.isMember && (
-            <p className="is-size-7 has-text-danger" style={{ fontWeight: 'bold' }}>
-              <s>Rs. {pendingTransaction.originalPrice}</s> (40% OFF Applied)
-            </p>
-          )}
-        </div>
-      </div>
-      <div className="level-right">
-        <span className={`tag ${userData?.isMember ? 'is-danger' : 'is-primary'} is-light`}>
-          {selectedMachine}
-        </span>
-      </div>
-    </div>
+                  <div
+                    className="notification mt-4 is-dark"
+                    style={{
+                      border: userData?.isMember ? "1px solid #ff3860" : "1px solid #00d1b2",
+                      background: "#161616",
+                    }}
+                  >
+                    <div className="level is-mobile mb-3">
+                      <div className="level-left">
+                        <div>
+                          <p className="is-size-7 has-text-grey heading mb-1">
+                            Total Amount {userData?.isMember && "(Member Rate)"}
+                          </p>
+                          <p className="title is-4 has-text-white mb-0">
+                            Rs. {pendingTransaction.price}
+                          </p>
+                          {userData?.isMember && (
+                            <p className="is-size-7 has-text-danger" style={{ fontWeight: 'bold' }}>
+                              <s>Rs. {pendingTransaction.originalPrice}</s> (50% OFF Applied)
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                      <div className="level-right">
+                        <span className={`tag ${userData?.isMember ? 'is-danger' : 'is-primary'} is-light`}>
+                          {selectedMachine}
+                        </span>
+                      </div>
+                    </div>
 
-    <div className="field">
-      <label className="label is-size-7 has-text-grey">LAP TIME / NOTES (OPTIONAL)</label>
-      <div className="control">
-        <input
-          className="input is-small is-dark mb-3"
-          placeholder="e.g. 1:24.432"
-          value={lapTime}
-          onChange={(e) => setLapTime(e.target.value)}
-        />
-      </div>
-    </div>
+                    <div className="field">
+                      <label className="label is-size-7 has-text-grey">LAP TIME / NOTES (OPTIONAL)</label>
+                      <div className="control">
+                        <input
+                          className="input is-small is-dark mb-3"
+                          placeholder="e.g. 1:24.432"
+                          value={lapTime}
+                          onChange={(e) => setLapTime(e.target.value)}
+                        />
+                      </div>
+                    </div>
 
-    <div className="columns is-mobile">
-      <div className="column">
-        <button
-          disabled={!selectedMachine || isUpdating}
-          className={`button is-success is-fullwidth ${isUpdating ? "is-loading" : ""}`}
-          onClick={() => confirmPayment("CASH")}
-        >
-          <span className="icon is-small"><i className="fas fa-money-bill-wave"></i></span>
-          <span>CASH</span>
-        </button>
-      </div>
-      <div className="column">
-        <button
-          disabled={!selectedMachine || isUpdating}
-          className={`button is-info is-fullwidth ${isUpdating ? "is-loading" : ""}`}
-          onClick={() => confirmPayment("CARD")}
-        >
-          <span className="icon is-small"><i className="fas fa-credit-card"></i></span>
-          <span>CARD</span>
-        </button>
-      </div>
-    </div>
-    
-    {userData?.isMember && (
-      <p className="help has-text-centered has-text-grey-light mt-2">
-        Member discount is linked to: <b>{userData.fullName}</b>
-      </p>
-    )}
-  </div>
-)}
+                    <div className="columns is-mobile">
+                      <div className="column">
+                        <button
+                          disabled={!selectedMachine || isUpdating}
+                          className={`button is-success is-fullwidth ${isUpdating ? "is-loading" : ""}`}
+                          onClick={() => confirmPayment("CASH")}
+                        >
+                          <span className="icon is-small"><i className="fas fa-money-bill-wave"></i></span>
+                          <span>CASH</span>
+                        </button>
+                      </div>
+                      <div className="column">
+                        <button
+                          disabled={!selectedMachine || isUpdating}
+                          className={`button is-info is-fullwidth ${isUpdating ? "is-loading" : ""}`}
+                          onClick={() => confirmPayment("CARD")}
+                        >
+                          <span className="icon is-small"><i className="fas fa-credit-card"></i></span>
+                          <span>CARD</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {userData?.isMember && (
+                      <p className="help has-text-centered has-text-grey-light mt-2">
+                        Member discount is linked to: <b>{userData.fullName}</b>
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 
