@@ -10,15 +10,53 @@ const customStyles = `
   .scroll-container { min-height: 100vh; padding: 20px 15px; width: 100%; display: block; }
   .logo-wrapper { display: flex; align-items: center; justify-content: center; margin-bottom: 25px; width: 100%; }
   .logo-img { max-height: 60px; max-width: 200px; width: auto; height: auto; object-fit: contain; }
-  .reward-banner { width: 100%; max-width: 450px; background: linear-gradient(145deg, #00d1b2 0%, #006b5a 100%); border-radius: 24px; padding: 25px 20px; text-align: center; margin: 0 auto 20px auto; box-shadow: 0 15px 30px rgba(0, 209, 178, 0.2); border: 1px solid rgba(255, 255, 255, 0.1); }
+  
+  /* Member & Interface Containers - Fixed Width for Consistency */
+  .member-card, .interface-box, .stat-grid, .reward-banner {
+    width: 100%;
+    max-width: 450px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  /* Member Specific Styling */
+  .member-card { 
+    background: linear-gradient(145deg, #1a1a1a 0%, #000000 100%); 
+    border: 2px solid #d4af37; 
+    border-radius: 24px; 
+    padding: 25px; 
+    position: relative; 
+    overflow: hidden;
+    box-shadow: 0 10px 30px rgba(212, 175, 55, 0.15);
+  }
+  .member-badge {
+    position: absolute;
+    top: 5px;
+    right: -35px;
+    background: #d4af37;
+    color: #000;
+    padding: 5px 40px;
+    transform: rotate(45deg);
+    font-weight: 900;
+    font-size: 10px;
+    letter-spacing: 1px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.5);
+  }
+  .member-text {
+    color: #d4af37 !important;
+    text-shadow: 0 0 10px rgba(212, 175, 55, 0.3);
+  }
+
+  .reward-banner { background: linear-gradient(145deg, #00d1b2 0%, #006b5a 100%); border-radius: 24px; padding: 25px 20px; text-align: center; margin-bottom: 20px; box-shadow: 0 15px 30px rgba(0, 209, 178, 0.2); border: 1px solid rgba(255, 255, 255, 0.1); }
   .claim-btn { display: inline-block; background: #fff; color: #006b5a; padding: 12px 25px; border-radius: 50px; text-decoration: none; font-weight: 900; font-size: 14px; text-transform: uppercase; animation: pulse 2s infinite; }
-  .interface-box { background: rgba(255, 255, 255, 0.03); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 20px; width: 100%; max-width: 450px; margin: 0 auto 12px auto; padding: 20px; box-sizing: border-box; }
-  .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; width: 100%; max-width: 450px; margin: 0 auto 12px auto; }
+  .interface-box { background: rgba(255, 255, 255, 0.03); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 20px; margin-bottom: 12px; padding: 20px; box-sizing: border-box; }
+  .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
   .stat-box { background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 20px; padding: 15px; text-align: center; }
   .live-pulse { width: 8px; height: 8px; background: #00d1b2; border-radius: 50%; display: inline-block; margin-right: 8px; box-shadow: 0 0 8px #00d1b2; animation: pulse 1.5s infinite; }
+  
   @keyframes pulse { 0% { transform: scale(0.95); opacity: 0.7; } 70% { transform: scale(1.1); opacity: 1; } 100% { transform: scale(0.95); opacity: 0.7; } }
   .schedule-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
-  .avatar-item { cursor: pointer; border-radius: 50%; border: 2px solid transparent; transition: 0.3s; }
+  .avatar-item { cursor: pointer; border-radius: 50%; border: 2px solid transparent; transition: 0.3s; width: 100%; aspect-ratio: 1; object-fit: cover; }
   .avatar-item.active { border-color: #00d1b2; transform: scale(1.1); }
 `;
 
@@ -110,28 +148,52 @@ const HomePage = () => {
                 </div>
             )}
 
-            {user && (
-                <div className="interface-box">
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                        <div>
-                            <p className="has-text-grey is-size-7 is-uppercase">Gamer Profile</p>
-                            <h1 className="title is-5 has-text-white mb-0">{userData?.fullName?.split(' ')[0] || 'Player'}</h1>
-                            <p className="is-size-7 has-text-primary">{userData?.totalHours || 0} Total Hours</p>
-                        </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
-                            <img className="is-rounded" src={userData?.avatar ? `/avatars/${userData.avatar}` : "/avatars/1.png"} style={{ border: '2px solid #00d1b2', height: '48px', width: '48px', objectFit: 'cover', borderRadius: '50%' }} alt="profile" />
-                            <button onClick={() => setShowAvatarPicker(!showAvatarPicker)} className="button is-ghost is-small p-0 is-size-7 has-text-primary">Change Pic</button>
-                        </div>
+           {/* USER PROFILE / MEMBER STATUS CARD */}
+{user && (
+    <Link to="/blast" style={{ textDecoration: 'none', display: 'block' }}>
+        <div className={userData?.isMember ? "member-card mb-3" : "interface-box"}>
+            {userData?.isMember && <div className="member-badge">PRO MEMBER</div>}
+            
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'relative', zIndex: 1 }}>
+                <div>
+                    <p className={`${userData?.isMember ? 'has-text-grey-light' : 'has-text-grey'} is-size-7 is-uppercase mb-0`}>
+                        {userData?.isMember ? '👑 Elite Member' : 'Gamer Profile'}
+                    </p>
+                    <h1 className={`title is-4 mb-0 ${userData?.isMember ? 'member-text' : 'has-text-white'}`}>
+                        {userData?.fullName?.split(' ')[0] || 'Player'}
+                    </h1>
+                    <div className="mt-1">
+                        <span className={`is-size-7 ${userData?.isMember ? 'has-text-white' : 'has-text-primary'}`}>
+                            {userData?.totalHours || 0} Hours Driven
+                        </span>
+                        {userData?.isMember && (
+                            <span className="ml-2 tag is-dark is-small" style={{ color: '#d4af37', borderColor: '#d4af37', border: '1px solid' }}>
+                                50% OFF ACTIVE
+                            </span>
+                        )}
                     </div>
-                    {showAvatarPicker && (
-                        <div className="avatar-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px', marginTop: '15px' }}>
-                            {avatars.map(a => (
-                                <img key={a} src={`/avatars/${a}`} className={`avatar-item ${userData?.avatar === a ? 'active' : ''}`} onClick={() => changeAvatar(a)} alt="option" />
-                            ))}
-                        </div>
-                    )}
                 </div>
-            )}
+
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
+                    <div style={{ position: 'relative' }}>
+                        <img 
+                            className="is-rounded" 
+                            src={userData?.avatar ? `/avatars/${userData.avatar}` : "/avatars/1.png"} 
+                            style={{ 
+                                border: userData?.isMember ? '3px solid #d4af37' : '2px solid #00d1b2', 
+                                height: '64px', width: '64px', 
+                                objectFit: 'cover', borderRadius: '50%' 
+                            }} 
+                            alt="profile" 
+                        />
+                    </div>
+                    {/* Move the button outside or keep it internal; clicking the card now triggers the page */}
+                    <span className="is-size-7 has-text-primary" style={{ fontWeight: 'bold' }}>VIEW STATS</span>
+                </div>
+            </div>
+        </div>
+    </Link>
+)}
 
             <div className="stat-grid">
                 <div className="stat-box">
@@ -190,8 +252,6 @@ const HomePage = () => {
                 </div>
             )}
 
-
-            {/* NEW BOOKING BANNER */}
             <div className="interface-box" style={{ background: 'linear-gradient(145deg, #25D366 0%, #128C7E 100%)', border: 'none', textAlign: 'center' }}>
                 <p className="is-size-7 is-uppercase has-text-weight-bold" style={{ color: 'rgba(255,255,255,0.9)', marginBottom: '5px' }}>Instant Reservation</p>
                 <h3 className="title is-5 has-text-white mb-3">Book Your Session</h3>
@@ -204,7 +264,6 @@ const HomePage = () => {
                     </a>
                 </div>
             </div>
-
 
             {!user && (
                 <div className="has-text-centered mt-4">

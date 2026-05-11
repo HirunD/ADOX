@@ -20,6 +20,7 @@ import { Transaction } from "firebase/firestore";
 import TransactionsPage from "./screens/TransactionsPage";
 import PlayersList from "./screens/PlayerList";
 import MembershipSignup from "./screens/MembershipSignup";
+import ProfileBlast from "./screens/ProfileBlast";
 
 const App = () => {
     const [isLoading, setIsLoading] = useState(true);
@@ -63,6 +64,7 @@ const App = () => {
                         <Route path="/admin/transaction" element={<TransactionsPage />} />
                         <Route path="/users" element={<PlayersList />} />
                         <Route path="/members" element={<MembershipSignup />} />
+                        <Route path="/blast" element={<ProfileBlast />} />
 
 
                         {/* <Route path="/price" element={<AdminPricing />} /> */}
