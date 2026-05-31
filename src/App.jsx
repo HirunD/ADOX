@@ -21,6 +21,7 @@ import TransactionsPage from "./screens/TransactionsPage";
 import PlayersList from "./screens/PlayerList";
 import MembershipSignup from "./screens/MembershipSignup";
 import ProfileBlast from "./screens/ProfileBlast";
+import EventBilling from "./screens/EventBilling";
 
 const App = () => {
     const [isLoading, setIsLoading] = useState(true);
@@ -65,6 +66,7 @@ const App = () => {
                         <Route path="/users" element={<PlayersList />} />
                         <Route path="/members" element={<MembershipSignup />} />
                         <Route path="/blast" element={<ProfileBlast />} />
+                        <Route path="/eventbilling" element={<EventBilling />} />
 
 
                         {/* <Route path="/price" element={<AdminPricing />} /> */}

@@ -1,12 +1,13 @@
 import React, { useEffect, useState } from "react";
 import { db } from "../../firebase";
-import { collection, getDocs } from "firebase/firestore";
+import { collection, getDocs, onSnapshot } from "firebase/firestore";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, LineChart, Line, Legend } from 'recharts';
 
 const AnalyticsPage = () => {
     const [isAdmin, setIsAdmin] = useState(false);
     const [password, setPassword] = useState("");
     const [allUsers, setAllUsers] = useState([]);
+    const [allEvents, setAllEvents] = useState([]); // Added state to track raw event data
     const [loading, setLoading] = useState(true);
     const [range, setRange] = useState("week"); // Default to week for better chart view
     const [startDate, setStartDate] = useState("");
@@ -22,10 +23,19 @@ const AnalyticsPage = () => {
                 setLoading(false);
             };
             fetchData();
+
+            // Live snapshot setup for real-time event invoices integration
+            const unsubEvents = onSnapshot(collection(db, "event_invoices"), (snapshot) => {
+                const eventsList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                setAllEvents(eventsList);
+            });
+
+            return () => unsubEvents();
         }
     }, [isAdmin]);
 
-    const getFilteredData = () => {
+    // Reusable timing boundaries parser mirroring original dashboard limit metrics
+    const getDateLimits = () => {
         const now = new Date();
         let startLimit = new Date(0);
         let endLimit = new Date(now.getTime() + 86400000);
@@ -39,6 +49,11 @@ const AnalyticsPage = () => {
             endLimit = new Date(endDate);
             endLimit.setHours(23, 59, 59, 999);
         }
+        return { startLimit, endLimit };
+    };
+
+    const getFilteredData = () => {
+        const { startLimit, endLimit } = getDateLimits();
 
         return allUsers.map(user => ({
             ...user,
@@ -49,7 +64,19 @@ const AnalyticsPage = () => {
         }));
     };
 
+    // New isolation layer parsing event invoices matching range constraints
+    const getFilteredEvents = () => {
+        const { startLimit, endLimit } = getDateLimits();
+
+        return allEvents.filter(event => {
+            // Checks eventDate field fallback to structural timestamp parameter if needed
+            const eTime = new Date(event.eventDate || event.createdAt);
+            return eTime >= startLimit && eTime <= endLimit;
+        });
+    };
+
     const filteredUsers = getFilteredData();
+    const filteredEvents = getFilteredEvents(); // Parsed range events reference array
 
     // --- CHART LOGIC: DATE BY DATE ANALYSIS ---
     const getChartData = () => {
@@ -66,14 +93,28 @@ const AnalyticsPage = () => {
             });
         });
 
+        // Appends filtered event bookings directly into matching daily coordinate keys
+        filteredEvents.forEach(e => {
+            const dateKey = new Date(e.eventDate || e.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            if (!dailyMap[dateKey]) {
+                dailyMap[dateKey] = { date: dateKey, revenue: 0, visits: 0 };
+            }
+            dailyMap[dateKey].revenue += (parseFloat(e.amountPaid) || 0);
+            // Event metrics are bundled separate from machine walk-in counts to keep counts accurate
+        });
+
         // Convert map to sorted array
         return Object.values(dailyMap).sort((a, b) => new Date(a.date) - new Date(b.date));
     };
 
     // --- FINANCIALS ---
-    const totalRevenue = filteredUsers.reduce((acc, u) => 
+    const totalUserRevenue = filteredUsers.reduce((acc, u) => 
         acc + u.filteredSessions.reduce((sum, s) => sum + (parseFloat(s.amountPaid) || 0), 0), 0
     );
+    // Combines standard profile transactions with bulk commercial event payments
+    const totalEventRevenue = filteredEvents.reduce((acc, e) => acc + (parseFloat(e.amountPaid) || 0), 0);
+    const totalRevenue = totalUserRevenue + totalEventRevenue;
+
     const totalSessions = filteredUsers.reduce((acc, u) => acc + u.filteredSessions.length, 0);
     const activeUserCount = allUsers.filter(u => {
         const lastSession = u.sessions?.sort((a, b) => new Date(b.startTime) - new Date(a.startTime))[0];
@@ -81,15 +122,29 @@ const AnalyticsPage = () => {
     }).length;
 
     const getTopPlayers = () => {
-        return filteredUsers
+        // Formulates list tracking standard spenders
+        const spenders = filteredUsers
             .filter(u => u.fullName?.toLowerCase().includes(searchTerm.toLowerCase()))
             .map(u => ({
                 name: u.fullName,
                 count: u.filteredSessions.length,
                 revenue: u.filteredSessions.reduce((acc, s) => acc + (parseFloat(s.amountPaid) || 0), 0),
+                isEvent: false
             }))
-            .filter(u => u.count > 0)
-            .sort((a, b) => b.revenue - a.revenue);
+            .filter(u => u.count > 0);
+
+        // Appends corporate/private client bookings into list entries array natively
+        const events = filteredEvents
+            .filter(e => e.clientName?.toLowerCase().includes(searchTerm.toLowerCase()))
+            .map(e => ({
+                name: `💼 ${e.clientName} (Event)`,
+                count: 1,
+                revenue: parseFloat(e.amountPaid) || 0,
+                isEvent: true
+            }));
+
+        // Merges arrays together sorting top aggregate revenue returns descending
+        return [...spenders, ...events].sort((a, b) => b.revenue - a.revenue);
     };
 
     if (!isAdmin) return (
@@ -191,7 +246,7 @@ const AnalyticsPage = () => {
                         </div>
                     </div>
 
-                    {/* PLAYER LIST */}
+                    {/* PLAYER & EVENT LIST */}
                     <div className="column is-12">
                         <div className="box" style={{ background: '#1a1a1a' }}>
                             <div className="level">
@@ -203,15 +258,15 @@ const AnalyticsPage = () => {
                             <table className="table is-fullwidth is-dark" style={{ background: 'transparent' }}>
                                 <thead>
                                     <tr>
-                                        <th>Player</th>
+                                        <th>Player / Client</th>
                                         <th className="has-text-centered">Visits</th>
                                         <th className="has-text-right">Total Paid</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {getTopPlayers().map((p, i) => (
-                                        <tr key={i}>
-                                            <td>{p.name}</td>
+                                        <tr key={i} style={p.isEvent ? { background: 'rgba(0, 209, 178, 0.02)' } : {}}>
+                                            <td style={p.isEvent ? { color: '#00d1b2' } : {}}>{p.name}</td>
                                             <td className="has-text-centered">{p.count}</td>
                                             <td className="has-text-right has-text-weight-bold has-text-success">Rs. {p.revenue.toLocaleString()}</td>
                                         </tr>
