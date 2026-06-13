@@ -148,52 +148,62 @@ const HomePage = () => {
                 </div>
             )}
 
-           {/* USER PROFILE / MEMBER STATUS CARD */}
-{user && (
-    <Link to="/blast" style={{ textDecoration: 'none', display: 'block' }}>
-        <div className={userData?.isMember ? "member-card mb-3" : "interface-box"}>
-            {userData?.isMember && <div className="member-badge">PRO MEMBER</div>}
-            
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'relative', zIndex: 1 }}>
-                <div>
-                    <p className={`${userData?.isMember ? 'has-text-grey-light' : 'has-text-grey'} is-size-7 is-uppercase mb-0`}>
-                        {userData?.isMember ? '👑 Elite Member' : 'Gamer Profile'}
-                    </p>
-                    <h1 className={`title is-4 mb-0 ${userData?.isMember ? 'member-text' : 'has-text-white'}`}>
-                        {userData?.fullName?.split(' ')[0] || 'Player'}
-                    </h1>
-                    <div className="mt-1">
-                        <span className={`is-size-7 ${userData?.isMember ? 'has-text-white' : 'has-text-primary'}`}>
-                            {userData?.totalHours || 0} Hours Driven
-                        </span>
-                        {userData?.isMember && (
-                            <span className="ml-2 tag is-dark is-small" style={{ color: '#d4af37', borderColor: '#d4af37', border: '1px solid' }}>
-                                50% OFF ACTIVE
-                            </span>
-                        )}
-                    </div>
-                </div>
+            {/* USER PROFILE / MEMBER STATUS CARD */}
+            {user && (() => {
+                // RUNTIME VERIFICATION AGAINST ISO DATE STRING TIMESTAMP
+                const isMembershipActive = userData?.isMember && userData?.membershipExpiry && new Date(userData.membershipExpiry) > new Date();
 
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
-                    <div style={{ position: 'relative' }}>
-                        <img 
-                            className="is-rounded" 
-                            src={userData?.avatar ? `/avatars/${userData.avatar}` : "/avatars/1.png"} 
-                            style={{ 
-                                border: userData?.isMember ? '3px solid #d4af37' : '2px solid #00d1b2', 
-                                height: '64px', width: '64px', 
-                                objectFit: 'cover', borderRadius: '50%' 
-                            }} 
-                            alt="profile" 
-                        />
-                    </div>
-                    {/* Move the button outside or keep it internal; clicking the card now triggers the page */}
-                    <span className="is-size-7 has-text-primary" style={{ fontWeight: 'bold' }}>VIEW STATS</span>
-                </div>
-            </div>
-        </div>
-    </Link>
-)}
+                return (
+                    <Link to="/blast" style={{ textDecoration: 'none', display: 'block' }}>
+                        <div className={isMembershipActive ? "member-card mb-3" : "interface-box mb-3"}>
+                            {isMembershipActive && <div className="member-badge">PRO MEMBER</div>}
+                            
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'relative', zIndex: 1 }}>
+                                <div>
+                                    <p className={`${isMembershipActive ? 'has-text-grey-light' : 'has-text-grey'} is-size-7 is-uppercase mb-0`}>
+                                        {isMembershipActive ? '👑 Elite Member' : 'Gamer Profile'}
+                                    </p>
+                                    <h1 className={`title is-4 mb-0 ${isMembershipActive ? 'member-text' : 'has-text-white'}`}>
+                                        {userData?.fullName?.split(' ')[0] || 'Player'}
+                                    </h1>
+                                    <div className="mt-1">
+                                        <span className={`is-size-7 ${isMembershipActive ? 'has-text-white' : 'has-text-primary'}`}>
+                                            {userData?.totalHours || 0} Hours Driven
+                                        </span>
+                                        {isMembershipActive && (
+                                            <span className="ml-2 tag is-dark is-small" style={{ color: '#d4af37', borderColor: '#d4af37', border: '1px solid' }}>
+                                                50% OFF ACTIVE
+                                            </span>
+                                        )}
+                                    </div>
+                                    {userData?.membershipExpiry && (
+                                        <p className="is-size-7 mt-2 has-text-grey mb-0">
+                                            {isMembershipActive ? 'Expires: ' : 'Membership Expired: '}
+                                            {new Date(userData.membershipExpiry).toLocaleDateString()}
+                                        </p>
+                                    )}
+                                </div>
+
+                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
+                                    <div style={{ position: 'relative' }}>
+                                        <img 
+                                            className="is-rounded" 
+                                            src={userData?.avatar ? `/avatars/${userData.avatar}` : "/avatars/1.png"} 
+                                            style={{ 
+                                                border: isMembershipActive ? '3px solid #d4af37' : '2px solid #00d1b2', 
+                                                height: '64px', width: '64px', 
+                                                objectFit: 'cover', borderRadius: '50%' 
+                                            }} 
+                                            alt="profile" 
+                                        />
+                                    </div>
+                                    <span className="is-size-7 has-text-primary" style={{ fontWeight: 'bold' }}>VIEW STATS</span>
+                                </div>
+                            </div>
+                        </div>
+                    </Link>
+                );
+            })()}
 
             <div className="stat-grid">
                 <div className="stat-box">
@@ -218,7 +228,7 @@ const HomePage = () => {
                                 </p>
                             </div>
                             <div style={{ textAlign: 'right', flexShrink: 0, marginLeft: '12px' }}>
-                                <p className="is-size-7 has-text-weight-bold has-text-primary" style={{ margin: 0 }}>{player.timeLeft}m left</p>
+                                <p className="is-size-7 has-text-weight-bold Henderson has-text-primary" style={{ margin: 0 }}>{player.timeLeft}m left</p>
                                 <span style={{ fontSize: '10px', color: '#888' }}>Ends {player.endsAt}</span>
                             </div>
                         </div>
