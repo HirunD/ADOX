@@ -26,6 +26,7 @@ const AdminPanel = () => {
   const [pendingTransaction, setPendingTransaction] = useState(null);
 
   const [standardPricing, setStandardPricing] = useState(null);
+  const [globalDiscount, setGlobalDiscount] = useState({ bool: false, percentage: 0 });
   const [selectedMachine, setSelectedMachine] = useState("");
   const [lapTime, setLapTime] = useState("");
   const [receiptData, setReceiptData] = useState(null);
@@ -101,6 +102,17 @@ const AdminPanel = () => {
   useEffect(() => {
     onSnapshot(doc(db, "settings", "pricing"), (docSnap) => {
       if (docSnap.exists()) setStandardPricing(docSnap.data());
+    });
+
+    // BACKEND GLOBAL DISCOUNT CONFIGURATION LISTENER
+    onSnapshot(doc(db, "settings", "discount"), (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        setGlobalDiscount({
+          bool: data.bool || false,
+          percentage: Number(data.percentage) || 0
+        });
+      }
     });
 
     const unsubTxn = onSnapshot(collection(db, "users"), (snapshot) => {
@@ -184,47 +196,43 @@ const AdminPanel = () => {
       const snap = await getDocs(q);
 
       const now = new Date();
-let invTotal = 0;
-let periodInvoices = [];
+      let invTotal = 0;
+      let periodInvoices = [];
 
-snap.forEach(doc => {
-  const data = doc.data();
-  const iDate = data.timestamp?.toDate() || new Date(data.timestamp);
+      snap.forEach(doc => {
+        const data = doc.data();
+        const iDate = data.timestamp?.toDate() || new Date(data.timestamp);
 
-  let matches = false;
-  if (txnFilter === "today") matches = iDate.toDateString() === now.toDateString();
-  else if (txnFilter === "week") {
-    const wAgo = new Date(); wAgo.setDate(now.getDate() - 7);
-    matches = iDate >= wAgo;
-  }
-  else if (txnFilter === "month") {
-    // Better month check that matches current month and year
-    matches = iDate.getMonth() === now.getMonth() && iDate.getFullYear() === now.getFullYear();
-  }
-  else matches = true;
+        let matches = false;
+        if (txnFilter === "today") matches = iDate.toDateString() === now.toDateString();
+        else if (txnFilter === "week") {
+          const wAgo = new Date(); wAgo.setDate(now.getDate() - 7);
+          matches = iDate >= wAgo;
+        }
+        else if (txnFilter === "month") {
+          matches = iDate.getMonth() === now.getMonth() && iDate.getFullYear() === now.getFullYear();
+        }
+        else matches = true;
 
-  if (matches) {
-    // Dynamic active check based on the invoice or user context timestamp
-    const isMembershipExpired = data.membershipExpiry ? new Date(data.membershipExpiry) < now : false;
+        if (matches) {
+          const isMembershipExpired = data.membershipExpiry ? new Date(data.membershipExpiry) < now : false;
 
-    invTotal += (Number(data.amountPaid) || 0);
-    periodInvoices.push({
-      ...data,
-      isInvoice: true,
-      startTime: iDate.toISOString(), 
-      players: data.userName,
-      machine: "Membership",
-      // If expired, treat them safely as a non-member in historic tracking displays
-      isMember: !isMembershipExpired && data.isMember 
-    });
-  }
-});
+          invTotal += (Number(data.amountPaid) || 0);
+          periodInvoices.push({
+            ...data,
+            isInvoice: true,
+            startTime: iDate.toISOString(), 
+            players: data.userName,
+            machine: "Membership",
+            isMember: !isMembershipExpired && data.isMember 
+          });
+        }
+      });
 
       // 3. Combine both for display and total
       const sessionRev = filteredSessions.reduce((sum, t) => sum + (Number(t.amountPaid) || 0), 0);
       setTotalRevenue(sessionRev + invTotal);
 
-      // Sort combined data by time so memberships show up in the history list
       const combined = [...filteredSessions, ...periodInvoices].sort(
         (a, b) => new Date(b.startTime) - new Date(a.startTime)
       );
@@ -305,7 +313,6 @@ snap.forEach(doc => {
       };
       await setDoc(doc(db, "users", uid), newUserData);
 
-      // AUTO-FILL FOR BILLING
       setUserData({ ...newUserData, uid });
 
       setRegForm({ name: "", phone: "", email: "", age: "" });
@@ -325,7 +332,7 @@ snap.forEach(doc => {
       duration: 0.25, // 15 mins
       amountPaid: price,
       method: "CASH",
-      machine: "Quick Cash", // Hardcoded since station info is deleted
+      machine: "Quick Cash", 
       players: "Guest Walk-in",
       isQuickSession: true,
     };
@@ -343,7 +350,6 @@ snap.forEach(doc => {
       setReceiptData({ ...sessionData, name: "Guest", total: price, bonus: 0 });
       setIsUpdating(false);
 
-      // Slight delay to ensure receiptData is set before printing
       setTimeout(() => {
         window.print();
       }, 500);
@@ -353,13 +359,13 @@ snap.forEach(doc => {
       setIsUpdating(false);
     }
   };
+
   const confirmPayment = async (method) => {
     if (!userData || !pendingTransaction || !selectedMachine)
       return alert("Missing Info!");
 
     setIsUpdating(true);
 
-    // 1. Calculate Bonus Time
     const userBonusMins =
       !userData.isGuest && userData.rewardClaimed === false
         ? userData.bonusMinutes || 0
@@ -370,8 +376,6 @@ snap.forEach(doc => {
         : 0;
 
     const finalDuration = pendingTransaction.hours + (userBonusMins + friendBonusMins) / 60;
-
-    // 2. REVENUE LOGIC: Use the price from pendingTransaction (already discounted by 40% if member)
     const finalAmount = Number(pendingTransaction.price);
 
     const playersNames = friendData
@@ -381,15 +385,15 @@ snap.forEach(doc => {
     const sessionData = {
       startTime: new Date().toISOString(),
       duration: finalDuration,
-      amountPaid: finalAmount, // This records the actual revenue after discount
+      amountPaid: finalAmount, 
       method,
       machine: selectedMachine,
       bestLap: lapTime || null,
       players: playersNames,
       bonusApplied: userBonusMins + friendBonusMins > 0,
       isSingleRace: pendingTransaction.isSingleRace || false,
-      isMemberSession: userData.isMember || false, // Tagging it for future analytics
-      originalPrice: pendingTransaction.originalPrice || finalAmount // Track the 'loss' if you want
+      isMemberSession: userData.isMember || false, 
+      originalPrice: pendingTransaction.originalPrice || finalAmount 
     };
 
     try {
@@ -413,7 +417,6 @@ snap.forEach(doc => {
         await updateDoc(friendRef, { rewardClaimed: true });
       }
 
-      // Update receipt with the actual paid amount
       setReceiptData({
         ...sessionData,
         name: playersNames,
@@ -438,15 +441,7 @@ snap.forEach(doc => {
 
   const FEE = 1000;
   const VALID_DAYS = 30;
-  const MEMBER_DISCOUNT = 0.50; // 40% OFF
-
-  // Helper to calculate price based on membership
-  const calculateFinalPrice = (basePrice) => {
-    if (userData?.isMember) {
-      return Math.round(basePrice * (1 - MEMBER_DISCOUNT));
-    }
-    return basePrice;
-  };
+  const MEMBER_DISCOUNT = 0.50; 
 
   if (!isAdmin)
     return (
@@ -560,7 +555,7 @@ snap.forEach(doc => {
           {/* SIDEBAR: LIVE STATUS & QUICK WALK-IN */}
           <div className="column is-12-tablet is-4-desktop">
             <div style={{ position: "sticky", top: "1rem" }}>
-              {/* QUICK REGISTER (NEW) */}
+              {/* QUICK REGISTER */}
               <div
                 className="box mb-4"
                 style={{ background: "#1a1a1a", border: "1px solid #00d1b2" }}
@@ -717,401 +712,415 @@ snap.forEach(doc => {
           </div>
 
           {/* MAIN PANEL: SEARCH & CONFIGURATOR */}
-        <div className="column is-12-tablet is-8-desktop">
-  {/* SEARCH */}
-  <div className="box mb-4" style={{ background: "#1a1a1a" }}>
-    <form
-      onSubmit={(e) => handlePhoneSearch(e, "primary")}
-      className="field has-addons"
-    >
-      <div className="control is-expanded">
-        <input
-          className="input is-dark"
-          type="tel"
-          placeholder="Search Player Phone..."
-          value={searchPhone}
-          onChange={(e) => setSearchPhone(e.target.value)}
-        />
-      </div>
-      <div className="control">
-        <button type="submit" className="button is-primary">
-          Find
-        </button>
-      </div>
-    </form>
-  </div>
+          <div className="column is-12-tablet is-8-desktop">
+            {/* SEARCH */}
+            <div className="box mb-4" style={{ background: "#1a1a1a" }}>
+              <form
+                onSubmit={(e) => handlePhoneSearch(e, "primary")}
+                className="field has-addons"
+              >
+                <div className="control is-expanded">
+                  <input
+                    className="input is-dark"
+                    type="tel"
+                    placeholder="Search Player Phone..."
+                    value={searchPhone}
+                    onChange={(e) => setSearchPhone(e.target.value)}
+                  />
+                </div>
+                <div className="control">
+                  <button type="submit" className="button is-primary">
+                    Find
+                  </button>
+                </div>
+              </form>
+            </div>
 
-  {/* CONFIGURATOR */}
-  {userData && (() => {
-    // RUNTIME MEMEBERSHIP TIME EVALUATION
-    const isMembershipActive = userData?.isMember && userData?.membershipExpiry && new Date(userData.membershipExpiry) > new Date();
+            {/* CONFIGURATOR */}
+            {userData && (() => {
+              const isMembershipActive = userData?.isMember && userData?.membershipExpiry && new Date(userData.membershipExpiry) > new Date();
+              
+              // RESOLVE CURRENT DYNAMIC DISCOUNT SCHEME
+              let activeDiscountMultiplier = 1;
+              let discountLabel = "";
 
-    return (
-      <div
-        className="box"
-        style={{ background: "#111", border: "1px solid #00d1b2" }}
-      >
-        <div className="level is-mobile">
-          <div className="level-left">
-            <div>
-              <h2 className="title is-5 has-text-white mb-0">
-                Player: {userData.fullName}
-              </h2>
-              {userData.membershipExpiry && (
-                <p className={`is-size-7 ${isMembershipActive ? 'has-text-grey-light' : 'has-text-danger'}`}>
-                  {isMembershipActive ? "👑 Active Member Until: " : "❌ Membership Expired: "}
-                  {new Date(userData.membershipExpiry).toLocaleDateString()}
-                </p>
+              if (isMembershipActive) {
+                activeDiscountMultiplier = 0.50; // 50% member rate
+                discountLabel = "50% MEMBER OFF";
+              } else if (globalDiscount.bool && globalDiscount.percentage > 0) {
+                // Safely interpret fraction vs whole percentage integers (e.g., 20 vs 0.2)
+                const parsedRate = globalDiscount.percentage > 1 ? globalDiscount.percentage / 100 : globalDiscount.percentage;
+                activeDiscountMultiplier = 1 - parsedRate;
+                discountLabel = `${Math.round(parsedRate * 100)}% PROMO OFF`;
+              }
+
+              const hasDiscountApplied = activeDiscountMultiplier < 1;
+
+              return (
+                <div
+                  className="box"
+                  style={{ background: "#111", border: "1px solid #00d1b2" }}
+                >
+                  <div className="level is-mobile">
+                    <div className="level-left">
+                      <div>
+                        <h2 className="title is-5 has-text-white mb-0">
+                          Player: {userData.fullName}
+                        </h2>
+                        {userData.membershipExpiry && (
+                          <p className={`is-size-7 ${isMembershipActive ? 'has-text-grey-light' : 'has-text-danger'}`}>
+                            {isMembershipActive ? "👑 Active Member Until: " : "❌ Membership Expired: "}
+                            {new Date(userData.membershipExpiry).toLocaleDateString()}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    <div className="level-right">
+                      <button
+                        className="delete"
+                        onClick={() => {
+                          setUserData(null);
+                          setFriendData(null);
+                        }}
+                      ></button>
+                    </div>
+                  </div>
+
+                  {!friendData && (
+                    <form
+                      onSubmit={(e) => handlePhoneSearch(e, "friend")}
+                      className="field has-addons mt-2"
+                    >
+                      <div className="control is-expanded">
+                        <input
+                          className="input is-small is-dark"
+                          placeholder="Add Friend Phone"
+                          value={friendPhone}
+                          onChange={(e) => setFriendPhone(e.target.value)}
+                        />
+                      </div>
+                      <div className="control">
+                        <button type="submit" className="button is-small is-info">
+                          Add
+                        </button>
+                      </div>
+                    </form>
+                  )}
+                  {friendData && (
+                    <p className="is-size-7 has-text-info mb-3">
+                      Linked: {friendData.fullName}
+                    </p>
+                  )}
+
+                  <div className="columns is-multiline mt-2">
+                    <div className="column is-12-mobile is-6-tablet">
+                      <label className="label is-small has-text-grey">
+                        STATION
+                      </label>
+                      <div className="columns is-mobile is-multiline">
+                        {MACHINES.map((m) => (
+                          <div key={m} className="column is-6">
+                            <button
+                              disabled={activeSessions.some(
+                                (s) => s.machine === m,
+                              )}
+                              className={`button is-small is-fullwidth ${selectedMachine === m ? "is-primary" : "is-dark"}`}
+                              onClick={() => setSelectedMachine(m)}
+                            >
+                              {m}
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="column is-12-mobile is-6-tablet">
+                      <label className="label is-small has-text-grey">
+                        TIME / RACE {hasDiscountApplied && <span className="tag is-danger is-pulled-right">{discountLabel}</span>}
+                      </label>
+                      <div className="columns is-mobile is-multiline">
+                        {/* Standard Pricing Buttons */}
+                        {[0.25, 0.5, 1, 2].map((h) => {
+                          const basePrice = standardPricing?.[String(h)] || 0;
+                          const discountedPrice = Math.round(basePrice * activeDiscountMultiplier);
+
+                          return (
+                            <div key={h} className="column is-6">
+                              <button
+                                className={`button is-small is-fullwidth ${pendingTransaction?.hours === h && !pendingTransaction.isCustom ? "is-info" : "is-dark"}`}
+                                onClick={() =>
+                                  setPendingTransaction({
+                                    hours: h,
+                                    price: discountedPrice,
+                                    isSingleRace: false,
+                                    isCustom: false,
+                                    originalPrice: basePrice
+                                  })
+                                }
+                              >
+                                {h === 0.25 ? "15m" : `${h}h`} - Rs. {discountedPrice}
+                              </button>
+                            </div>
+                          );
+                        })}
+
+                        {/* Custom Hourly Billing Button */}
+                        <div className="column is-12">
+                          <button
+                            className={`button is-small is-fullwidth is-dashed ${pendingTransaction?.isCustom ? "is-primary" : "is-dark"}`}
+                            style={{ border: "1px dashed #00d1b2" }}
+                            onClick={() => {
+                              const h = parseFloat(prompt("Enter total hours:", "5"));
+                              if (!h || isNaN(h)) return;
+
+                              let basePrice = 0;
+                              if (h <= 2) {
+                                basePrice = (1500 / 2) * h;
+                              } else {
+                                basePrice = 1500 + (h - 2) * 750;
+                              }
+
+                              const finalPrice = Math.round(basePrice * activeDiscountMultiplier);
+
+                              setPendingTransaction({
+                                hours: h,
+                                price: finalPrice,
+                                isSingleRace: false,
+                                isCustom: true,
+                                originalPrice: basePrice
+                              });
+                            }}
+                          >
+                            ➕ Custom Duration {hasDiscountApplied ? `(${discountLabel})` : "(750/hr after 2h)"}
+                          </button>
+                        </div>
+
+                        {/* Single Race Button */}
+                        <div className="column is-12">
+                          <button
+                            className={`button is-small is-fullwidth ${pendingTransaction?.isSingleRace ? "is-warning" : "is-dark"}`}
+                            onClick={() => {
+                              const basePrice = 150;
+                              const finalPrice = Math.round(basePrice * activeDiscountMultiplier);
+                              setPendingTransaction({
+                                hours: 0.1,
+                                price: finalPrice,
+                                isSingleRace: true,
+                                isCustom: false,
+                                originalPrice: basePrice
+                              });
+                            }}
+                          >
+                            🏎️ SINGLE RACE - Rs. {Math.round(150 * activeDiscountMultiplier)}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {pendingTransaction && (
+                    <div
+                      className="notification mt-4 is-dark"
+                      style={{
+                        border: hasDiscountApplied ? "1px solid #ff3860" : "1px solid #00d1b2",
+                        background: "#161616",
+                      }}
+                    >
+                      <div className="level is-mobile mb-3">
+                        <div className="level-left">
+                          <div>
+                            <p className="is-size-7 has-text-grey heading mb-1">
+                              Total Amount {hasDiscountApplied && `(${discountLabel})`}
+                            </p>
+                            <p className="title is-4 has-text-white mb-0">
+                              Rs. {pendingTransaction.price}
+                            </p>
+                            {hasDiscountApplied && (
+                              <p className="is-size-7 has-text-danger" style={{ fontWeight: 'bold' }}>
+                                <s>Rs. {pendingTransaction.originalPrice}</s> ({discountLabel} Applied)
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                        <div className="level-right">
+                          <span className={`tag ${hasDiscountApplied ? 'is-danger' : 'is-primary'} is-light`}>
+                            {selectedMachine}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="field">
+                        <label className="label is-size-7 has-text-grey">LAP TIME / NOTES (OPTIONAL)</label>
+                        <div className="control">
+                          <input
+                            className="input is-small is-dark mb-3"
+                            placeholder="e.g. 1:24.432"
+                            value={lapTime}
+                            onChange={(e) => setLapTime(e.target.value)}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="columns is-mobile">
+                        <div className="column">
+                          <button
+                            disabled={!selectedMachine || isUpdating}
+                            className={`button is-success is-fullwidth ${isUpdating ? "is-loading" : ""}`}
+                            onClick={() => confirmPayment("CASH")}
+                          >
+                            <span className="icon is-small"><i className="fas fa-money-bill-wave"></i></span>
+                            <span>CASH</span>
+                          </button>
+                        </div>
+                        <div className="column">
+                          <button
+                            disabled={!selectedMachine || isUpdating}
+                            className={`button is-info is-fullwidth ${isUpdating ? "is-loading" : ""}`}
+                            onClick={() => confirmPayment("CARD")}
+                          >
+                            <span className="icon is-small"><i className="fas fa-credit-card"></i></span>
+                            <span>CARD</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      {isMembershipActive && (
+                        <p className="help has-text-centered has-text-grey-light mt-2">
+                          Member discount is linked to: <b>{userData.fullName}</b>
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
+            {/* ── TRANSACTIONS HISTORY ── */}
+            <div style={{ marginTop: "2rem" }}>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  cursor: "pointer",
+                  marginBottom: "1rem",
+                }}
+                onClick={() => setTxnPanelOpen(!txnPanelOpen)}
+              >
+                <h2 className="title is-5 has-text-white">
+                  💳 Revenue History
+                </h2>
+                <span style={{ color: "#666" }}>
+                  {txnPanelOpen ? "▲" : "▼"}
+                </span>
+              </div>
+
+              {txnPanelOpen && (
+                <>
+                  <div className="buttons mb-4">
+                    {["today", "week", "month", "all"].map((f) => (
+                      <button
+                        key={f}
+                        onClick={() => setTxnFilter(f)}
+                        className={`button is-small is-rounded ${txnFilter === f ? "is-primary" : "is-dark"}`}
+                      >
+                        {f}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div
+                    style={{
+                      background:
+                        "linear-gradient(135deg, #00d1b2 0%, #006b5a 100%)",
+                      borderRadius: "12px",
+                      padding: "1.25rem",
+                      marginBottom: "1rem",
+                    }}
+                  >
+                    <p
+                      style={{
+                        color: "white",
+                        fontSize: "0.7rem",
+                        fontWeight: 700,
+                        textTransform: "uppercase",
+                        letterSpacing: "1px",
+                      }}
+                    >
+                      Total Revenue ({txnFilter})
+                    </p>
+                    <h2
+                      style={{
+                        color: "white",
+                        fontSize: "1.75rem",
+                        fontWeight: 800,
+                      }}
+                    >
+                      Rs. {totalRevenue.toLocaleString()}
+                    </h2>
+                  </div>
+
+                  <div
+                    className="box"
+                    style={{
+                      background: "#1a1a1a",
+                      padding: "0",
+                      border: "1px solid #333",
+                      overflow: "hidden",
+                    }}
+                  >
+                    <div style={{ overflowX: "auto" }}>
+                      <table
+                        className="table is-fullwidth is-dark"
+                        style={{ background: "transparent", minWidth: "500px" }}
+                      >
+                        <thead>
+                          <tr>
+                            <th>Player</th>
+                            <th>Station</th>
+                            <th>Time</th>
+                            <th>Method</th>
+                            <th className="has-text-right">Amount</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filteredData.map((t, i) => (
+                            <tr
+                              key={i}
+                              style={{ borderBottom: "1px solid #222" }}
+                            >
+                              <td className="is-size-7">
+                                <span className="has-text-weight-bold">
+                                  {t.players || t.userName}
+                                </span>
+                                <br />
+                                <span
+                                  className="has-text-grey"
+                                  style={{ fontSize: "0.65rem" }}
+                                >
+                                  {new Date(t.startTime).toLocaleDateString()} |{" "}
+                                  {new Date(t.startTime).toLocaleTimeString(
+                                    [],
+                                    { hour: "2-digit", minute: "2-digit" },
+                                  )}
+                                </span>
+                              </td>
+                              <td className="is-size-7">{t.machine}</td>
+                              <td className="is-size-7">
+                                {t.isSingleRace ? "Race" : `${t.duration}h`}
+                              </td>
+                              <td className="is-size-7">{t.method}</td>
+                              <td className="has-text-right has-text-weight-bold">
+                                Rs. {t.amountPaid}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </>
               )}
             </div>
           </div>
-          <div className="level-right">
-            <button
-              className="delete"
-              onClick={() => {
-                setUserData(null);
-                setFriendData(null);
-              }}
-            ></button>
-          </div>
-        </div>
-
-        {!friendData && (
-          <form
-            onSubmit={(e) => handlePhoneSearch(e, "friend")}
-            className="field has-addons mt-2"
-          >
-            <div className="control is-expanded">
-              <input
-                className="input is-small is-dark"
-                placeholder="Add Friend Phone"
-                value={friendPhone}
-                onChange={(e) => setFriendPhone(e.target.value)}
-              />
-            </div>
-            <div className="control">
-              <button type="submit" className="button is-small is-info">
-                Add
-              </button>
-            </div>
-          </form>
-        )}
-        {friendData && (
-          <p className="is-size-7 has-text-info mb-3">
-            Linked: {friendData.fullName}
-          </p>
-        )}
-
-        <div className="columns is-multiline mt-2">
-          <div className="column is-12-mobile is-6-tablet">
-            <label className="label is-small has-text-grey">
-              STATION
-            </label>
-            <div className="columns is-mobile is-multiline">
-              {MACHINES.map((m) => (
-                <div key={m} className="column is-6">
-                  <button
-                    disabled={activeSessions.some(
-                      (s) => s.machine === m,
-                    )}
-                    className={`button is-small is-fullwidth ${selectedMachine === m ? "is-primary" : "is-dark"}`}
-                    onClick={() => setSelectedMachine(m)}
-                  >
-                    {m}
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-          <div className="column is-12-mobile is-6-tablet">
-            <label className="label is-small has-text-grey">
-              TIME / RACE {isMembershipActive && <span className="tag is-danger is-pulled-right">50% MEMBER OFF</span>}
-            </label>
-            <div className="columns is-mobile is-multiline">
-              {/* Standard Pricing Buttons */}
-              {[0.25, 0.5, 1, 2].map((h) => {
-                const basePrice = standardPricing?.[String(h)] || 0;
-                // Make sure your calculateFinalPrice function uses the updated expiry logic as well!
-                const discountedPrice = isMembershipActive ? (basePrice * 0.5) : basePrice;
-
-                return (
-                  <div key={h} className="column is-6">
-                    <button
-                      className={`button is-small is-fullwidth ${pendingTransaction?.hours === h && !pendingTransaction.isCustom ? "is-info" : "is-dark"}`}
-                      onClick={() =>
-                        setPendingTransaction({
-                          hours: h,
-                          price: discountedPrice,
-                          isSingleRace: false,
-                          isCustom: false,
-                          originalPrice: basePrice
-                        })
-                      }
-                    >
-                      {h === 0.25 ? "15m" : `${h}h`} - Rs. {discountedPrice}
-                    </button>
-                  </div>
-                );
-              })}
-
-              {/* Custom Hourly Billing Button */}
-              <div className="column is-12">
-                <button
-                  className={`button is-small is-fullwidth is-dashed ${pendingTransaction?.isCustom ? "is-primary" : "is-dark"}`}
-                  style={{ border: "1px dashed #00d1b2" }}
-                  onClick={() => {
-                    const h = parseFloat(prompt("Enter total hours:", "5"));
-                    if (!h || isNaN(h)) return;
-
-                    let basePrice = 0;
-                    if (h <= 2) {
-                      basePrice = (1500 / 2) * h;
-                    } else {
-                      basePrice = 1500 + (h - 2) * 750;
-                    }
-
-                    const finalPrice = isMembershipActive ? (basePrice * 0.5) : basePrice;
-
-                    setPendingTransaction({
-                      hours: h,
-                      price: finalPrice,
-                      isSingleRace: false,
-                      isCustom: true,
-                      originalPrice: basePrice
-                    });
-                  }}
-                >
-                  ➕ Custom Duration {isMembershipActive ? "(Member Rate)" : "(750/hr after 2h)"}
-                </button>
-              </div>
-
-              {/* Single Race Button */}
-              <div className="column is-12">
-                <button
-                  className={`button is-small is-fullwidth ${pendingTransaction?.isSingleRace ? "is-warning" : "is-dark"}`}
-                  onClick={() => {
-                    const basePrice = 150;
-                    const finalPrice = isMembershipActive ? (basePrice * 0.5) : basePrice;
-                    setPendingTransaction({
-                      hours: 0.1,
-                      price: finalPrice,
-                      isSingleRace: true,
-                      isCustom: false,
-                      originalPrice: basePrice
-                    });
-                  }}
-                >
-                  🏎️ SINGLE RACE - Rs. {isMembershipActive ? (150 * 0.5) : 150}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {pendingTransaction && (
-          <div
-            className="notification mt-4 is-dark"
-            style={{
-              border: isMembershipActive ? "1px solid #ff3860" : "1px solid #00d1b2",
-              background: "#161616",
-            }}
-          >
-            <div className="level is-mobile mb-3">
-              <div className="level-left">
-                <div>
-                  <p className="is-size-7 has-text-grey heading mb-1">
-                    Total Amount {isMembershipActive && "(Member Rate)"}
-                  </p>
-                  <p className="title is-4 has-text-white mb-0">
-                    Rs. {pendingTransaction.price}
-                  </p>
-                  {isMembershipActive && (
-                    <p className="is-size-7 has-text-danger" style={{ fontWeight: 'bold' }}>
-                      <s>Rs. {pendingTransaction.originalPrice}</s> (50% OFF Applied)
-                    </p>
-                  )}
-                </div>
-              </div>
-              <div className="level-right">
-                <span className={`tag ${isMembershipActive ? 'is-danger' : 'is-primary'} is-light`}>
-                  {selectedMachine}
-                </span>
-              </div>
-            </div>
-
-            <div className="field">
-              <label className="label is-size-7 has-text-grey">LAP TIME / NOTES (OPTIONAL)</label>
-              <div className="control">
-                <input
-                  className="input is-small is-dark mb-3"
-                  placeholder="e.g. 1:24.432"
-                  value={lapTime}
-                  onChange={(e) => setLapTime(e.target.value)}
-                />
-              </div>
-            </div>
-
-            <div className="columns is-mobile">
-              <div className="column">
-                <button
-                  disabled={!selectedMachine || isUpdating}
-                  className={`button is-success is-fullwidth ${isUpdating ? "is-loading" : ""}`}
-                  onClick={() => confirmPayment("CASH")}
-                >
-                  <span className="icon is-small"><i className="fas fa-money-bill-wave"></i></span>
-                  <span>CASH</span>
-                </button>
-              </div>
-              <div className="column">
-                <button
-                  disabled={!selectedMachine || isUpdating}
-                  className={`button is-info is-fullwidth ${isUpdating ? "is-loading" : ""}`}
-                  onClick={() => confirmPayment("CARD")}
-                >
-                  <span className="icon is-small"><i className="fas fa-credit-card"></i></span>
-                  <span>CARD</span>
-                </button>
-              </div>
-            </div>
-
-            {isMembershipActive && (
-              <p className="help has-text-centered has-text-grey-light mt-2">
-                Member discount is linked to: <b>{userData.fullName}</b>
-              </p>
-            )}
-          </div>
-        )}
-      </div>
-    );
-  })()}
-
-  {/* ── TRANSACTIONS HISTORY ── */}
-  <div style={{ marginTop: "2rem" }}>
-    <div
-      style={{
-        display: "flex",
-        justifyContent: "space-between",
-        cursor: "pointer",
-        marginBottom: "1rem",
-      }}
-      onClick={() => setTxnPanelOpen(!txnPanelOpen)}
-    >
-      <h2 className="title is-5 has-text-white">
-        💳 Revenue History
-      </h2>
-      <span style={{ color: "#666" }}>
-        {txnPanelOpen ? "▲" : "▼"}
-      </span>
-    </div>
-
-    {txnPanelOpen && (
-      <>
-        <div className="buttons mb-4">
-          {["today", "week", "month", "all"].map((f) => (
-            <button
-              key={f}
-              onClick={() => setTxnFilter(f)}
-              className={`button is-small is-rounded ${txnFilter === f ? "is-primary" : "is-dark"}`}
-            >
-              {f}
-            </button>
-          ))}
-        </div>
-
-        <div
-          style={{
-            background:
-              "linear-gradient(135deg, #00d1b2 0%, #006b5a 100%)",
-            borderRadius: "12px",
-            padding: "1.25rem",
-            marginBottom: "1rem",
-          }}
-        >
-          <p
-            style={{
-              color: "white",
-              fontSize: "0.7rem",
-              fontWeight: 700,
-              textTransform: "uppercase",
-              letterSpacing: "1px",
-            }}
-          >
-            Total Revenue ({txnFilter})
-          </p>
-          <h2
-            style={{
-              color: "white",
-              fontSize: "1.75rem",
-              fontWeight: 800,
-            }}
-          >
-            Rs. {totalRevenue.toLocaleString()}
-          </h2>
-        </div>
-
-        <div
-          className="box"
-          style={{
-            background: "#1a1a1a",
-            padding: "0",
-            border: "1px solid #333",
-            overflow: "hidden",
-          }}
-        >
-          <div style={{ overflowX: "auto" }}>
-            <table
-              className="table is-fullwidth is-dark"
-              style={{ background: "transparent", minWidth: "500px" }}
-            >
-              <thead>
-                <tr>
-                  <th>Player</th>
-                  <th>Station</th>
-                  <th>Time</th>
-                  <th>Method</th>
-                  <th className="has-text-right">Amount</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredData.map((t, i) => (
-                  <tr
-                    key={i}
-                    style={{ borderBottom: "1px solid #222" }}
-                  >
-                    <td className="is-size-7">
-                      <span className="has-text-weight-bold">
-                        {t.players || t.userName}
-                      </span>
-                      <br />
-                      <span
-                        className="has-text-grey"
-                        style={{ fontSize: "0.65rem" }}
-                      >
-                        {new Date(t.startTime).toLocaleDateString()} |{" "}
-                        {new Date(t.startTime).toLocaleTimeString(
-                          [],
-                          { hour: "2-digit", minute: "2-digit" },
-                        )}
-                      </span>
-                    </td>
-                    <td className="is-size-7">{t.machine}</td>
-                    <td className="is-size-7">
-                      {t.isSingleRace ? "Race" : `${t.duration}h`}
-                    </td>
-                    <td className="is-size-7">{t.method}</td>
-                    <td className="has-text-right has-text-weight-bold">
-                      Rs. {t.amountPaid}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </>
-    )}
-  </div>
-</div>
         </div>
       </div>
 
