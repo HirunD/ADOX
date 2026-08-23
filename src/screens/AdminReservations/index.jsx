@@ -1,15 +1,16 @@
 import React, { useState, useEffect } from "react";
 import { db } from "../../firebase";
-import { 
-  collection, 
-  addDoc, 
-  query, 
-  where, 
-  getDocs, 
-  onSnapshot, 
-  deleteDoc, 
-  doc 
+import {
+  collection,
+  addDoc,
+  query,
+  where,
+  getDocs,
+  onSnapshot,
+  deleteDoc,
+  doc
 } from "firebase/firestore";
+import { MACHINE_NAMES } from "../../config/stations";
 
 const AdminReservations = () => {
     // --- ADMIN LOCK STATE ---
@@ -33,7 +34,7 @@ const AdminReservations = () => {
     const [loading, setLoading] = useState(false);
     const [searchLoading, setSearchLoading] = useState(false);
 
-    const MACHINES = ["Simulator", "PS5", "PC", "PS4 #1", "PS4 #2", "PS4 #3"];
+    const MACHINES = MACHINE_NAMES;
 
     useEffect(() => {
         if (!isAuthenticated) return;

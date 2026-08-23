@@ -15,6 +15,16 @@ import {
   setDoc,
   addDoc,
 } from "firebase/firestore";
+import {
+  MACHINE_NAMES,
+  TOTAL_STATIONS,
+  PRICE_SOLO_PER_HOUR,
+  PRICE_DOUBLE_PER_HOUR,
+  getHourlyRate,
+  SINGLE_RACE_PRICE,
+  QUICK_CASH_PRICES,
+  getStationCapacity,
+} from "../../config/stations";
 
 const AdminPanel = () => {
   const [isAdmin, setIsAdmin] = useState(false);
@@ -22,10 +32,10 @@ const AdminPanel = () => {
   const [userData, setUserData] = useState(null);
   const [friendData, setFriendData] = useState(null);
   const [friendPhone, setFriendPhone] = useState("");
+  const [partySize, setPartySize] = useState(1);
   const [isUpdating, setIsUpdating] = useState(false);
   const [pendingTransaction, setPendingTransaction] = useState(null);
 
-  const [standardPricing, setStandardPricing] = useState(null);
   const [globalDiscount, setGlobalDiscount] = useState({ bool: false, percentage: 0 });
   const [selectedMachine, setSelectedMachine] = useState("");
   const [lapTime, setLapTime] = useState("");
@@ -50,8 +60,8 @@ const AdminPanel = () => {
   const [totalRevenue, setTotalRevenue] = useState(0);
   const [txnPanelOpen, setTxnPanelOpen] = useState(true);
 
-  const MACHINES = ["Simulator", "PS5", "PC", "PS4 #1", "PS4 #2", "PS4 #3"];
-  const TOTAL_CAPACITY = 6;
+  const MACHINES = MACHINE_NAMES;
+  const TOTAL_CAPACITY = TOTAL_STATIONS;
   const [searchPhone, setSearchPhone] = useState("");
 
   const videoRef = useRef(null);
@@ -100,10 +110,6 @@ const AdminPanel = () => {
 
   // --- DATA LISTENERS ---
   useEffect(() => {
-    onSnapshot(doc(db, "settings", "pricing"), (docSnap) => {
-      if (docSnap.exists()) setStandardPricing(docSnap.data());
-    });
-
     // BACKEND GLOBAL DISCOUNT CONFIGURATION LISTENER
     onSnapshot(doc(db, "settings", "discount"), (docSnap) => {
       if (docSnap.exists()) {
@@ -265,6 +271,20 @@ const AdminPanel = () => {
     return () => clearInterval(interval);
   }, [activeSessions]);
 
+  // Changing party size can push it past the selected station's slot
+  // capacity (e.g. Simulator only has 1 slot) — drop the now-invalid pick.
+  useEffect(() => {
+    if (selectedMachine && partySize > getStationCapacity(selectedMachine)) {
+      setSelectedMachine("");
+    }
+  }, [partySize, selectedMachine]);
+
+  // The solo/double rate is baked into whatever price was already picked —
+  // toggling party size invalidates that price, so force a fresh pick.
+  useEffect(() => {
+    setPendingTransaction(null);
+  }, [partySize]);
+
   const handlePhoneSearch = async (e, type = "primary") => {
     if (e) e.preventDefault();
     const phone = type === "primary" ? searchPhone : friendPhone;
@@ -279,6 +299,7 @@ const AdminPanel = () => {
         } else {
           setFriendData(data);
           setFriendPhone("");
+          setPartySize(2);
         }
       } else {
         alert("User not found");
@@ -364,6 +385,10 @@ const AdminPanel = () => {
     if (!userData || !pendingTransaction || !selectedMachine)
       return alert("Missing Info!");
 
+    if (partySize > getStationCapacity(selectedMachine)) {
+      return alert(`${selectedMachine} only allows ${getStationCapacity(selectedMachine)} ${getStationCapacity(selectedMachine) === 1 ? "person" : "people"}.`);
+    }
+
     setIsUpdating(true);
 
     const userBonusMins =
@@ -390,6 +415,7 @@ const AdminPanel = () => {
       machine: selectedMachine,
       bestLap: lapTime || null,
       players: playersNames,
+      numberOfPeople: partySize,
       bonusApplied: userBonusMins + friendBonusMins > 0,
       isSingleRace: pendingTransaction.isSingleRace || false,
       isMemberSession: userData.isMember || false, 
@@ -428,6 +454,7 @@ const AdminPanel = () => {
         window.print();
         setUserData(null);
         setFriendData(null);
+        setPartySize(1);
         setPendingTransaction(null);
         setSelectedMachine("");
         setIsUpdating(false);
@@ -623,19 +650,19 @@ const AdminPanel = () => {
                   <div className="column">
                     <button
                       disabled={isUpdating}
-                      onClick={() => handleQuickSession(150)}
+                      onClick={() => handleQuickSession(QUICK_CASH_PRICES[0])}
                       className={`button is-small is-warning is-light is-fullwidth ${isUpdating ? "is-loading" : ""}`}
                     >
-                      Rs. 150
+                      Rs. {QUICK_CASH_PRICES[0]}
                     </button>
                   </div>
                   <div className="column">
                     <button
                       disabled={isUpdating}
-                      onClick={() => handleQuickSession(300)}
+                      onClick={() => handleQuickSession(QUICK_CASH_PRICES[1])}
                       className={`button is-small is-warning is-fullwidth ${isUpdating ? "is-loading" : ""}`}
                     >
-                      Rs. 300
+                      Rs. {QUICK_CASH_PRICES[1]}
                     </button>
                   </div>
                 </div>
@@ -739,7 +766,7 @@ const AdminPanel = () => {
             {/* CONFIGURATOR */}
             {userData && (() => {
               const isMembershipActive = userData?.isMember && userData?.membershipExpiry && new Date(userData.membershipExpiry) > new Date();
-              
+
               // RESOLVE CURRENT DYNAMIC DISCOUNT SCHEME
               let activeDiscountMultiplier = 1;
               let discountLabel = "";
@@ -781,6 +808,7 @@ const AdminPanel = () => {
                         onClick={() => {
                           setUserData(null);
                           setFriendData(null);
+                          setPartySize(1);
                         }}
                       ></button>
                     </div>
@@ -812,25 +840,53 @@ const AdminPanel = () => {
                     </p>
                   )}
 
+                  <div className="field mt-3">
+                    <label className="label is-small has-text-grey">PARTY SIZE</label>
+                    <div className="columns is-mobile">
+                      <div className="column">
+                        <button
+                          className={`button is-small is-fullwidth ${partySize === 1 ? "is-primary" : "is-dark"}`}
+                          onClick={() => setPartySize(1)}
+                        >
+                          SOLO - Rs. {PRICE_SOLO_PER_HOUR}/hr
+                        </button>
+                      </div>
+                      <div className="column">
+                        <button
+                          disabled={!selectedMachine ? false : getStationCapacity(selectedMachine) < 2}
+                          title={selectedMachine && getStationCapacity(selectedMachine) < 2 ? `${selectedMachine} only allows 1 person` : ""}
+                          className={`button is-small is-fullwidth ${partySize === 2 ? "is-primary" : "is-dark"}`}
+                          onClick={() => setPartySize(2)}
+                        >
+                          DOUBLE - Rs. {PRICE_DOUBLE_PER_HOUR}/hr
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
                   <div className="columns is-multiline mt-2">
                     <div className="column is-12-mobile is-6-tablet">
                       <label className="label is-small has-text-grey">
                         STATION
                       </label>
                       <div className="columns is-mobile is-multiline">
-                        {MACHINES.map((m) => (
-                          <div key={m} className="column is-6">
-                            <button
-                              disabled={activeSessions.some(
-                                (s) => s.machine === m,
-                              )}
-                              className={`button is-small is-fullwidth ${selectedMachine === m ? "is-primary" : "is-dark"}`}
-                              onClick={() => setSelectedMachine(m)}
-                            >
-                              {m}
-                            </button>
-                          </div>
-                        ))}
+                        {MACHINES.map((m) => {
+                          const capacity = getStationCapacity(m);
+                          const isOccupied = activeSessions.some((s) => s.machine === m);
+                          const tooFewSlots = partySize > capacity;
+                          return (
+                            <div key={m} className="column is-6">
+                              <button
+                                disabled={isOccupied || tooFewSlots}
+                                title={tooFewSlots ? `${m} only allows ${capacity} ${capacity === 1 ? "person" : "people"}` : ""}
+                                className={`button is-small is-fullwidth ${selectedMachine === m ? "is-primary" : "is-dark"}`}
+                                onClick={() => setSelectedMachine(m)}
+                              >
+                                {m} <span className="has-text-grey-light ml-1">({capacity} slot{capacity > 1 ? "s" : ""})</span>
+                              </button>
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
                     <div className="column is-12-mobile is-6-tablet">
@@ -838,9 +894,9 @@ const AdminPanel = () => {
                         TIME / RACE {hasDiscountApplied && <span className="tag is-danger is-pulled-right">{discountLabel}</span>}
                       </label>
                       <div className="columns is-mobile is-multiline">
-                        {/* Standard Pricing Buttons */}
+                        {/* Standard Pricing Buttons (flat per-machine rate by party size) */}
                         {[0.25, 0.5, 1, 2].map((h) => {
-                          const basePrice = standardPricing?.[String(h)] || 0;
+                          const basePrice = getHourlyRate(partySize) * h;
                           const discountedPrice = Math.round(basePrice * activeDiscountMultiplier);
 
                           return (
@@ -872,13 +928,7 @@ const AdminPanel = () => {
                               const h = parseFloat(prompt("Enter total hours:", "5"));
                               if (!h || isNaN(h)) return;
 
-                              let basePrice = 0;
-                              if (h <= 2) {
-                                basePrice = (1500 / 2) * h;
-                              } else {
-                                basePrice = 1500 + (h - 2) * 750;
-                              }
-
+                              const basePrice = getHourlyRate(partySize) * h;
                               const finalPrice = Math.round(basePrice * activeDiscountMultiplier);
 
                               setPendingTransaction({
@@ -890,7 +940,7 @@ const AdminPanel = () => {
                               });
                             }}
                           >
-                            ➕ Custom Duration {hasDiscountApplied ? `(${discountLabel})` : "(750/hr after 2h)"}
+                            ➕ Custom Duration {hasDiscountApplied ? `(${discountLabel})` : `(Rs.${getHourlyRate(partySize)}/hr)`}
                           </button>
                         </div>
 
@@ -899,7 +949,7 @@ const AdminPanel = () => {
                           <button
                             className={`button is-small is-fullwidth ${pendingTransaction?.isSingleRace ? "is-warning" : "is-dark"}`}
                             onClick={() => {
-                              const basePrice = 150;
+                              const basePrice = SINGLE_RACE_PRICE;
                               const finalPrice = Math.round(basePrice * activeDiscountMultiplier);
                               setPendingTransaction({
                                 hours: 0.1,
@@ -910,7 +960,7 @@ const AdminPanel = () => {
                               });
                             }}
                           >
-                            🏎️ SINGLE RACE - Rs. {Math.round(150 * activeDiscountMultiplier)}
+                            🏎️ SINGLE RACE - Rs. {Math.round(SINGLE_RACE_PRICE * activeDiscountMultiplier)}
                           </button>
                         </div>
                       </div>

@@ -2,9 +2,10 @@ import React, { useState, useEffect } from "react";
 import { db } from "../../firebase";
 import { collection, onSnapshot } from "firebase/firestore";
 import { Link } from "react-router-dom";
+import { TOTAL_STATIONS } from "../../config/stations";
 
 const RevenueDashboard = () => {
-    const TOTAL_MACHINES = 3;
+    const TOTAL_MACHINES = TOTAL_STATIONS;
     const [isOwner, setIsOwner] = useState(false);
     const [password, setPassword] = useState("");
     const [stats, setStats] = useState({

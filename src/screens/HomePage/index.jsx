@@ -4,6 +4,7 @@ import { onAuthStateChanged, signOut } from "firebase/auth";
 import { doc, onSnapshot, collection, query, where, updateDoc } from "firebase/firestore";
 import QRCode from "react-qr-code";
 import { Link } from "react-router-dom";
+import { TOTAL_STATIONS as STATION_COUNT } from "../../config/stations";
 
 const customStyles = `
   body { background-color: #080808; margin: 0; padding: 0; font-family: 'Inter', sans-serif; }
@@ -68,7 +69,7 @@ const HomePage = () => {
     const [authLoading, setAuthLoading] = useState(true);
     const [showAvatarPicker, setShowAvatarPicker] = useState(false);
 
-    const TOTAL_STATIONS = 5; 
+    const TOTAL_STATIONS = STATION_COUNT;
     const avatars = ["1.png", "2.png", "3.png", "4.png", "5.png", "6.png"];
 
     useEffect(() => {
@@ -88,7 +89,6 @@ const HomePage = () => {
                 const data = userDoc.data();
                 if (data.sessions) {
                     data.sessions.forEach(s => {
-                        if (s.machine === "PS4 #3") return;
                         const start = new Date(s.startTime);
                         const durationHrs = parseFloat(s.duration) || 0;
                         const end = new Date(start.getTime() + (durationHrs * 3600000));
