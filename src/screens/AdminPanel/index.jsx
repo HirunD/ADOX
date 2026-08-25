@@ -18,9 +18,7 @@ import {
 import {
   MACHINE_NAMES,
   TOTAL_STATIONS,
-  PRICE_SOLO_PER_HOUR,
-  PRICE_DOUBLE_PER_HOUR,
-  getHourlyRate,
+  getStationRate,
   SINGLE_RACE_PRICE,
   QUICK_CASH_PRICES,
   getStationCapacity,
@@ -840,30 +838,6 @@ const AdminPanel = () => {
                     </p>
                   )}
 
-                  <div className="field mt-3">
-                    <label className="label is-small has-text-grey">PARTY SIZE</label>
-                    <div className="columns is-mobile">
-                      <div className="column">
-                        <button
-                          className={`button is-small is-fullwidth ${partySize === 1 ? "is-primary" : "is-dark"}`}
-                          onClick={() => setPartySize(1)}
-                        >
-                          SOLO - Rs. {PRICE_SOLO_PER_HOUR}/hr
-                        </button>
-                      </div>
-                      <div className="column">
-                        <button
-                          disabled={!selectedMachine ? false : getStationCapacity(selectedMachine) < 2}
-                          title={selectedMachine && getStationCapacity(selectedMachine) < 2 ? `${selectedMachine} only allows 1 person` : ""}
-                          className={`button is-small is-fullwidth ${partySize === 2 ? "is-primary" : "is-dark"}`}
-                          onClick={() => setPartySize(2)}
-                        >
-                          DOUBLE - Rs. {PRICE_DOUBLE_PER_HOUR}/hr
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-
                   <div className="columns is-multiline mt-2">
                     <div className="column is-12-mobile is-6-tablet">
                       <label className="label is-small has-text-grey">
@@ -888,15 +862,42 @@ const AdminPanel = () => {
                           );
                         })}
                       </div>
+
+                      <div className="field mt-3">
+                        <label className="label is-small has-text-grey">PARTY SIZE</label>
+                        <div className="columns is-mobile">
+                          <div className="column">
+                            <button
+                              className={`button is-small is-fullwidth ${partySize === 1 ? "is-primary" : "is-dark"}`}
+                              onClick={() => setPartySize(1)}
+                            >
+                              SOLO{selectedMachine ? ` - Rs. ${getStationRate(selectedMachine, 1)}/hr` : ""}
+                            </button>
+                          </div>
+                          <div className="column">
+                            <button
+                              disabled={!selectedMachine ? false : getStationCapacity(selectedMachine) < 2}
+                              title={selectedMachine && getStationCapacity(selectedMachine) < 2 ? `${selectedMachine} only allows 1 person` : ""}
+                              className={`button is-small is-fullwidth ${partySize === 2 ? "is-primary" : "is-dark"}`}
+                              onClick={() => setPartySize(2)}
+                            >
+                              DOUBLE{selectedMachine ? ` - Rs. ${getStationRate(selectedMachine, 2)}/hr` : ""}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
                     </div>
                     <div className="column is-12-mobile is-6-tablet">
                       <label className="label is-small has-text-grey">
                         TIME / RACE {hasDiscountApplied && <span className="tag is-danger is-pulled-right">{discountLabel}</span>}
                       </label>
+                      {!selectedMachine ? (
+                        <p className="is-size-7 has-text-grey">Pick a station first.</p>
+                      ) : (
                       <div className="columns is-mobile is-multiline">
-                        {/* Standard Pricing Buttons (flat per-machine rate by party size) */}
+                        {/* Standard Pricing Buttons (flat per-machine rate by station + party size) */}
                         {[0.25, 0.5, 1, 2].map((h) => {
-                          const basePrice = getHourlyRate(partySize) * h;
+                          const basePrice = getStationRate(selectedMachine, partySize) * h;
                           const discountedPrice = Math.round(basePrice * activeDiscountMultiplier);
 
                           return (
@@ -928,7 +929,7 @@ const AdminPanel = () => {
                               const h = parseFloat(prompt("Enter total hours:", "5"));
                               if (!h || isNaN(h)) return;
 
-                              const basePrice = getHourlyRate(partySize) * h;
+                              const basePrice = getStationRate(selectedMachine, partySize) * h;
                               const finalPrice = Math.round(basePrice * activeDiscountMultiplier);
 
                               setPendingTransaction({
@@ -940,7 +941,7 @@ const AdminPanel = () => {
                               });
                             }}
                           >
-                            ➕ Custom Duration {hasDiscountApplied ? `(${discountLabel})` : `(Rs.${getHourlyRate(partySize)}/hr)`}
+                            ➕ Custom Duration {hasDiscountApplied ? `(${discountLabel})` : `(Rs.${getStationRate(selectedMachine, partySize)}/hr)`}
                           </button>
                         </div>
 
@@ -964,6 +965,7 @@ const AdminPanel = () => {
                           </button>
                         </div>
                       </div>
+                      )}
                     </div>
                   </div>
 
