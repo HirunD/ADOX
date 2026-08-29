@@ -4,7 +4,15 @@ import { onAuthStateChanged, signOut } from "firebase/auth";
 import { doc, onSnapshot, collection, query, where, updateDoc } from "firebase/firestore";
 import QRCode from "react-qr-code";
 import { Link } from "react-router-dom";
-import { TOTAL_STATIONS as STATION_COUNT } from "../../config/stations";
+import { STATIONS, TOTAL_STATIONS as STATION_COUNT } from "../../config/stations";
+import { HOURS_LABEL, isOpenNow } from "../../config/hours";
+import PriceCalculator from "./PriceCalculator";
+import GalleryStrip from "./GalleryStrip";
+
+const WHATSAPP_NUMBER = "94778662814";
+// Real weekly headcount is shown as-is once it grows past this — below it we
+// show this floor instead, so a quiet week doesn't read as "nobody comes here".
+const MIN_DISPLAYED_WEEKLY_PLAYERS = 10;
 
 const customStyles = `
   body { background-color: #080808; margin: 0; padding: 0; font-family: 'Inter', sans-serif; }
@@ -65,7 +73,8 @@ const HomePage = () => {
     const [user, setUser] = useState(null);
     const [userData, setUserData] = useState(null);
     const [livePlayers, setLivePlayers] = useState([]);
-    const [allReservations, setAllReservations] = useState([]);
+    const [upcomingReservations, setUpcomingReservations] = useState([]);
+    const [weeklyPlayerCount, setWeeklyPlayerCount] = useState(0);
     const [authLoading, setAuthLoading] = useState(true);
     const [showAvatarPicker, setShowAvatarPicker] = useState(false);
 
@@ -83,7 +92,9 @@ const HomePage = () => {
     useEffect(() => {
         const unsubGlobal = onSnapshot(collection(db, "users"), (snapshot) => {
             let activeSessions = [];
+            let weeklyHeadcount = 0;
             const now = new Date();
+            const weekAgo = new Date(now.getTime() - 7 * 24 * 3600000);
 
             snapshot.forEach((userDoc) => {
                 const data = userDoc.data();
@@ -104,18 +115,25 @@ const HomePage = () => {
                                 endsAt: end.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
                             });
                         }
+
+                        if (start >= weekAgo && start <= now) {
+                            weeklyHeadcount += s.numberOfPeople || 1;
+                        }
                     });
                 }
             });
             setLivePlayers(activeSessions.sort((a, b) => a.timeLeft - b.timeLeft));
+            setWeeklyPlayerCount(weeklyHeadcount);
         });
 
+        // Today onward, so both "Today's Bookings" and the price calculator's
+        // per-date conflict check can be derived from one live list.
         const today = new Date().toISOString().split('T')[0];
-        const qRes = query(collection(db, "reservations"), where("date", "==", today));
+        const qRes = query(collection(db, "reservations"), where("date", ">=", today));
         const unsubRes = onSnapshot(qRes, (snap) => {
             const list = [];
             snap.forEach(d => list.push(d.data()));
-            setAllReservations(list.sort((a, b) => a.startTime.localeCompare(b.startTime)));
+            setUpcomingReservations(list.sort((a, b) => (a.date + a.startTime).localeCompare(b.date + b.startTime)));
         });
 
         if (user) {
@@ -139,6 +157,25 @@ const HomePage = () => {
         <div className="scroll-container">
             <style>{customStyles}</style>
             <div className="logo-wrapper"><img src="/logo.png" alt="Logo" className="logo-img" /></div>
+
+            <p className="has-text-centered is-size-7 has-text-grey mb-4">
+                <span className={isOpenNow() ? "has-text-success" : "has-text-danger"} style={{ fontWeight: 700 }}>
+                    {isOpenNow() ? "● Open Now" : "● Closed"}
+                </span>
+                <span className="ml-2">{HOURS_LABEL} · Daily</span>
+            </p>
+
+            <div
+                className="interface-box has-text-centered mb-3"
+                style={{ background: 'linear-gradient(145deg, #1a1a1a 0%, #000 100%)', border: '1px solid #00d1b2' }}
+            >
+                <p className="title is-3 has-text-primary mb-0">
+                    {Math.max(weeklyPlayerCount, MIN_DISPLAYED_WEEKLY_PLAYERS)}+
+                </p>
+                <p className="is-size-7 has-text-grey-light is-uppercase" style={{ letterSpacing: '1px' }}>
+                    Players This Week
+                </p>
+            </div>
 
             {!user && (
                 <div className="reward-banner">
@@ -217,6 +254,30 @@ const HomePage = () => {
             </div>
 
             <div className="interface-box">
+                <p className="is-size-7 has-text-grey is-uppercase mb-3">Station Status</p>
+                {STATIONS.map((s) => {
+                    const busy = livePlayers.find((p) => p.machine === s.name);
+                    const notifyMsg = `Hi! Let me know when ${s.name} is free${busy ? ` (currently busy till ${busy.endsAt})` : ""}.`;
+                    const notifyLink = `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(notifyMsg)}`;
+                    return (
+                        <div key={s.name} className="schedule-row">
+                            <span className="is-size-7 has-text-white">{s.name}</span>
+                            {busy ? (
+                                <>
+                                    <span className="is-size-7 has-text-danger">Busy till {busy.endsAt}</span>
+                                    <a href={notifyLink} target="_blank" rel="noreferrer" className="is-size-7 has-text-primary" style={{ fontWeight: 700 }}>
+                                        Notify Me
+                                    </a>
+                                </>
+                            ) : (
+                                <span className="is-size-7 has-text-success">Free</span>
+                            )}
+                        </div>
+                    );
+                })}
+            </div>
+
+            <div className="interface-box">
                 <p className="is-size-7 has-text-grey is-uppercase mb-3"><span className="live-pulse"></span>Live Sessions</p>
                 {livePlayers.length > 0 ? (
                     livePlayers.map((player, i) => (
@@ -238,20 +299,30 @@ const HomePage = () => {
                 )}
             </div>
 
-            <div className="interface-box">
-                <p className="is-size-7 has-text-grey is-uppercase mb-3">Today's Bookings</p>
-                {allReservations.length > 0 ? (
-                    allReservations.map((res, i) => (
-                        <div key={i} className="schedule-row">
-                            <span className="time-tag is-size-7" style={{ color: '#00d1b2' }}>{res.startTime}</span>
-                            <span className="has-text-grey-light is-size-7">{res.machine}</span>
-                            <span className="has-text-grey is-size-7">Reserved</span>
-                        </div>
-                    ))
-                ) : (
-                    <p className="is-size-7 has-text-grey">Stations available for walk-in.</p>
-                )}
-            </div>
+            <PriceCalculator livePlayers={livePlayers} reservations={upcomingReservations} />
+
+            <GalleryStrip />
+
+            {(() => {
+                const today = new Date().toISOString().split('T')[0];
+                const todaysReservations = upcomingReservations.filter((r) => r.date === today);
+                return (
+                    <div className="interface-box">
+                        <p className="is-size-7 has-text-grey is-uppercase mb-3">Today's Bookings</p>
+                        {todaysReservations.length > 0 ? (
+                            todaysReservations.map((res, i) => (
+                                <div key={i} className="schedule-row">
+                                    <span className="time-tag is-size-7" style={{ color: '#00d1b2' }}>{res.startTime}</span>
+                                    <span className="has-text-grey-light is-size-7">{res.machine}</span>
+                                    <span className="has-text-grey is-size-7">Reserved</span>
+                                </div>
+                            ))
+                        ) : (
+                            <p className="is-size-7 has-text-grey">Stations available for walk-in.</p>
+                        )}
+                    </div>
+                );
+            })()}
 
             {user && (
                 <div className="interface-box has-text-centered">
