@@ -19,6 +19,7 @@ import {
   MACHINE_NAMES,
   TOTAL_STATIONS,
   getStationRate,
+  getStationPrice,
   SINGLE_RACE_PRICE,
   QUICK_CASH_PRICES,
   getStationCapacity,
@@ -871,7 +872,7 @@ const AdminPanel = () => {
                               className={`button is-small is-fullwidth ${partySize === 1 ? "is-primary" : "is-dark"}`}
                               onClick={() => setPartySize(1)}
                             >
-                              SOLO{selectedMachine ? ` - Rs. ${getStationRate(selectedMachine, 1)}/hr` : ""}
+                              SOLO - Rs. {getStationRate(1)}/hr
                             </button>
                           </div>
                           <div className="column">
@@ -881,7 +882,7 @@ const AdminPanel = () => {
                               className={`button is-small is-fullwidth ${partySize === 2 ? "is-primary" : "is-dark"}`}
                               onClick={() => setPartySize(2)}
                             >
-                              DOUBLE{selectedMachine ? ` - Rs. ${getStationRate(selectedMachine, 2)}/hr` : ""}
+                              DOUBLE - Rs. {getStationRate(2)}/hr
                             </button>
                           </div>
                         </div>
@@ -895,9 +896,9 @@ const AdminPanel = () => {
                         <p className="is-size-7 has-text-grey">Pick a station first.</p>
                       ) : (
                       <div className="columns is-mobile is-multiline">
-                        {/* Standard Pricing Buttons (flat per-machine rate by station + party size) */}
-                        {[0.25, 0.5, 1, 2].map((h) => {
-                          const basePrice = getStationRate(selectedMachine, partySize) * h;
+                        {/* Standard Pricing Buttons (30m is a flat tier, 1h/2h scale off the hourly rate) */}
+                        {[0.5, 1, 2].map((h) => {
+                          const basePrice = getStationPrice(partySize, h);
                           const discountedPrice = Math.round(basePrice * activeDiscountMultiplier);
 
                           return (
@@ -914,7 +915,7 @@ const AdminPanel = () => {
                                   })
                                 }
                               >
-                                {h === 0.25 ? "15m" : `${h}h`} - Rs. {discountedPrice}
+                                {h === 0.5 ? "30m" : `${h}h`} - Rs. {discountedPrice}
                               </button>
                             </div>
                           );
@@ -929,7 +930,7 @@ const AdminPanel = () => {
                               const h = parseFloat(prompt("Enter total hours:", "5"));
                               if (!h || isNaN(h)) return;
 
-                              const basePrice = getStationRate(selectedMachine, partySize) * h;
+                              const basePrice = getStationRate(partySize) * h;
                               const finalPrice = Math.round(basePrice * activeDiscountMultiplier);
 
                               setPendingTransaction({
@@ -941,7 +942,7 @@ const AdminPanel = () => {
                               });
                             }}
                           >
-                            ➕ Custom Duration {hasDiscountApplied ? `(${discountLabel})` : `(Rs.${getStationRate(selectedMachine, partySize)}/hr)`}
+                            ➕ Custom Duration {hasDiscountApplied ? `(${discountLabel})` : `(Rs.${getStationRate(partySize)}/hr)`}
                           </button>
                         </div>
 

@@ -1,15 +1,11 @@
 import React, { useState } from "react";
-import { STATIONS, getStationCapacity, getStationRate } from "../../config/stations";
+import { STATIONS, getStationCapacity, getStationRate, getStationPrice } from "../../config/stations";
 
-const DURATIONS = [0.25, 0.5, 1, 2];
+const DURATIONS = [0.5, 1, 2];
 const EVENT_RATE_PER_HOUR = 2000;
 const WHATSAPP_NUMBER = "94778662814";
 
-const formatDuration = (h) => {
-  if (h === 0.25) return "15m";
-  if (h === 0.5) return "30m";
-  return `${h}h`;
-};
+const formatDuration = (h) => (h === 0.5 ? "30m" : `${h}h`);
 
 const todayStr = () => new Date().toISOString().split("T")[0];
 
@@ -34,8 +30,7 @@ const PriceCalculator = ({ livePlayers, reservations }) => {
   // needing an effect just to mirror it back into state.
   const effectivePartySize = partySize > capacity ? 1 : partySize;
 
-  const rate = getStationRate(station, effectivePartySize);
-  const price = Math.round(rate * hours);
+  const price = getStationPrice(effectivePartySize, hours);
   const eventPrice = Math.round(eventHours * EVENT_RATE_PER_HOUR);
 
   const busySession = isToday ? livePlayers.find((p) => p.machine === station) : null;
@@ -108,7 +103,7 @@ const PriceCalculator = ({ livePlayers, reservations }) => {
                 className={`button is-small is-fullwidth ${effectivePartySize === 1 ? "is-primary" : "is-dark"}`}
                 onClick={() => setPartySize(1)}
               >
-                Solo — Rs. {getStationRate(station, 1)}/hr
+                Solo — Rs. {getStationRate(1)}/hr
               </button>
             </div>
             <div className="column">
@@ -118,7 +113,7 @@ const PriceCalculator = ({ livePlayers, reservations }) => {
                 className={`button is-small is-fullwidth ${effectivePartySize === 2 ? "is-primary" : "is-dark"}`}
                 onClick={() => setPartySize(2)}
               >
-                Double — Rs. {capacity < 2 ? "—" : getStationRate(station, 2)}/hr
+                Double — Rs. {capacity < 2 ? "—" : getStationRate(2)}/hr
               </button>
             </div>
           </div>
