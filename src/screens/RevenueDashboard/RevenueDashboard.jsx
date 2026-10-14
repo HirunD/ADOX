@@ -3,6 +3,8 @@ import { db } from "../../firebase";
 import { collection, onSnapshot } from "firebase/firestore";
 import { Link } from "react-router-dom";
 import { TOTAL_STATIONS } from "../../config/stations";
+import { getPeriodRange } from "../../config/periods";
+import useNavigatorSales from "../../hooks/useNavigatorSales";
 
 const RevenueDashboard = () => {
     const TOTAL_MACHINES = TOTAL_STATIONS;
@@ -17,6 +19,7 @@ const RevenueDashboard = () => {
         totalHours: 0
     });
     const [loading, setLoading] = useState(true);
+    const navigatorSales = useNavigatorSales(isOwner);
 
     // Fetch Financial Data
     useEffect(() => {
@@ -25,12 +28,16 @@ const RevenueDashboard = () => {
         const usersRef = collection(db, "users");
         const unsubscribe = onSnapshot(usersRef, (snapshot) => {
             let t = 0, w = 0, l = 0, cashT = 0, cardT = 0, hours = 0;
-            const now = new Date();
-            const startOfToday = new Date();
-            startOfToday.setHours(0, 0, 0, 0);
-            
-            const lastWeek = new Date();
-            lastWeek.setDate(lastWeek.getDate() - 7);
+            const startOfToday = getPeriodRange("today").start;
+            const lastWeek = getPeriodRange("week").start;
+
+            // One-off Navigator event-stall takings (revenue only, no cash/card split)
+            navigatorSales.forEach((x) => {
+                const date = new Date(x.startTime);
+                l += x.amountPaid;
+                if (date >= startOfToday) t += x.amountPaid;
+                if (date >= lastWeek) w += x.amountPaid;
+            });
 
             snapshot.forEach((userDoc) => {
                 const data = userDoc.data();
@@ -55,12 +62,13 @@ const RevenueDashboard = () => {
                 }
             });
 
-            setStats({ today: t, week: w, lifetime: l, cashToday: cashT, cardToday: cardT, totalHours: hours });
+            const navigatorTotal = navigatorSales.reduce((sum, x) => sum + x.amountPaid, 0);
+            setStats({ today: t, week: w, lifetime: l, sessionLifetime: l - navigatorTotal, cashToday: cashT, cardToday: cardT, totalHours: hours });
             setLoading(false);
         });
 
         return () => unsubscribe();
-    }, [isOwner]);
+    }, [isOwner, navigatorSales]);
 
     const containerStyle = { background: '#050505', minHeight: '100vh', color: 'white' };
     const statBox = { background: '#121212', border: '1px solid #222', borderRadius: '15px', padding: '20px' };
@@ -69,7 +77,7 @@ const RevenueDashboard = () => {
     if (!isOwner) {
         return (
             <div className="section" style={{ background: '#050505', minHeight: '100vh', display: 'flex', alignItems: 'center' }}>
-                <form className="box" style={{ maxWidth: '400px', margin: 'auto', background: '#1a1a1a', border: '1px solid #333' }} onSubmit={(e) => {
+                <form className="box" style={{ width: '100%', maxWidth: '400px', margin: 'auto', background: '#1a1a1a', border: '1px solid #333' }} onSubmit={(e) => {
                     e.preventDefault();
                     // Uses the same secret key as your admin panel
                     if (password === import.meta.env.VITE_ADMIN_PASSWORD) setIsOwner(true);
@@ -99,9 +107,9 @@ const RevenueDashboard = () => {
     if (loading) return <div className="section has-text-centered" style={containerStyle}><p className="mt-6">Analyzing Records...</p></div>;
 
     return (
-        <section className="section" style={containerStyle}>
+        <section className="section px-4" style={containerStyle}>
             <div className="container">
-                <div className="level is-mobile mb-6">
+                <div className="level mb-6">
                     <div className="level-left">
                         <div>
                             <h1 className="title has-text-white mb-1">Financial Intelligence</h1>
@@ -118,12 +126,12 @@ const RevenueDashboard = () => {
 
                 <div className="columns is-multiline">
                     {/* Today */}
-                    <div className="column is-4">
+                    <div className="column is-12-mobile is-6-tablet is-4-desktop">
                         <div style={statBox}>
                             <p className="heading has-text-grey">Today's Revenue</p>
-                            <p className="title is-2 has-text-success">Rs. {stats.today.toLocaleString()}</p>
+                            <p className="title is-3 has-text-success">Rs. {stats.today.toLocaleString()}</p>
                             <hr style={{ background: '#222' }} />
-                            <div className="is-flex is-justify-content-space-between">
+                            <div className="is-flex is-justify-content-space-between is-flex-wrap-wrap" style={{ gap: '4px 12px' }}>
                                 <span className="has-text-grey-light is-size-7">💵 CASH: Rs. {stats.cashToday}</span>
                                 <span className="has-text-grey-light is-size-7">💳 CARD: Rs. {stats.cardToday}</span>
                             </div>
@@ -131,19 +139,19 @@ const RevenueDashboard = () => {
                     </div>
 
                     {/* Week */}
-                    <div className="column is-4">
+                    <div className="column is-12-mobile is-6-tablet is-4-desktop">
                         <div style={statBox}>
                             <p className="heading has-text-grey">Last 7 Days</p>
-                            <p className="title is-2 has-text-info">Rs. {stats.week.toLocaleString()}</p>
+                            <p className="title is-3 has-text-info">Rs. {stats.week.toLocaleString()}</p>
                             <p className="is-size-7 has-text-grey-light mt-4">Average: Rs. {Math.round(stats.week / 7).toLocaleString()} / day</p>
                         </div>
                     </div>
 
                     {/* Lifetime */}
-                    <div className="column is-4">
+                    <div className="column is-12-mobile is-6-tablet is-4-desktop">
                         <div style={statBox}>
                             <p className="heading has-text-grey">Lifetime Earnings</p>
-                            <p className="title is-2 has-text-white">Rs. {stats.lifetime.toLocaleString()}</p>
+                            <p className="title is-3 has-text-white">Rs. {stats.lifetime.toLocaleString()}</p>
                             <p className="is-size-7 has-text-primary mt-4">Total Playtime: {stats.totalHours.toFixed(1)} Hours</p>
                         </div>
                     </div>
@@ -155,10 +163,10 @@ const RevenueDashboard = () => {
                         <div className="column is-8">
                             <h3 className="subtitle is-5 has-text-white mb-2">Performance Summary</h3>
                             <p className="has-text-grey is-size-7">
-                                You are generating <strong>Rs. {stats.totalHours > 0 ? (stats.lifetime / stats.totalHours).toFixed(2) : 0}</strong> per hour of machine usage.
+                                You are generating <strong>Rs. {stats.totalHours > 0 ? (stats.sessionLifetime / stats.totalHours).toFixed(2) : 0}</strong> per hour of machine usage.
                             </p>
                         </div>
-                        <div className="column is-4 has-text-right">
+                        <div className="column is-4 has-text-right-tablet">
                             <button className="button is-primary is-outlined is-small" onClick={() => window.print()}>Export PDF Report</button>
                         </div>
                     </div>

@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from "react";
 import { auth, db } from "../../firebase";
 import { onAuthStateChanged, signOut } from "firebase/auth";
-import { doc, onSnapshot, collection, query, where, updateDoc } from "firebase/firestore";
+import { doc, onSnapshot, collection, query, where } from "firebase/firestore";
 import QRCode from "react-qr-code";
 import { Link } from "react-router-dom";
 import { STATIONS, TOTAL_STATIONS as STATION_COUNT } from "../../config/stations";
 import { HOURS_LABEL, isOpenNow } from "../../config/hours";
 import PriceCalculator from "./PriceCalculator";
 import GalleryStrip from "./GalleryStrip";
+import ForcePasswordChange from "../../components/ForcePasswordChange";
 
 const WHATSAPP_NUMBER = "94778662814";
 // Real weekly headcount is shown as-is once it grows past this — below it we
@@ -64,9 +65,13 @@ const customStyles = `
   .live-pulse { width: 8px; height: 8px; background: #00d1b2; border-radius: 50%; display: inline-block; margin-right: 8px; box-shadow: 0 0 8px #00d1b2; animation: pulse 1.5s infinite; }
   
   @keyframes pulse { 0% { transform: scale(0.95); opacity: 0.7; } 70% { transform: scale(1.1); opacity: 1; } 100% { transform: scale(0.95); opacity: 0.7; } }
-  .schedule-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
-  .avatar-item { cursor: pointer; border-radius: 50%; border: 2px solid transparent; transition: 0.3s; width: 100%; aspect-ratio: 1; object-fit: cover; }
-  .avatar-item.active { border-color: #00d1b2; transform: scale(1.1); }
+  .schedule-row { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 4px 12px; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
+  .reward-banner h2 { font-size: 1.4rem; font-weight: 900; margin-bottom: 8px; }
+  .reward-banner p { margin-bottom: 16px; line-height: 1.6; }
+  .live-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .live-row-name { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .live-row-name p { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  @media (max-width: 360px) { .interface-box { padding: 16px; } .member-card { padding: 20px; } }
 `;
 
 const HomePage = () => {
@@ -76,10 +81,8 @@ const HomePage = () => {
     const [upcomingReservations, setUpcomingReservations] = useState([]);
     const [weeklyPlayerCount, setWeeklyPlayerCount] = useState(0);
     const [authLoading, setAuthLoading] = useState(true);
-    const [showAvatarPicker, setShowAvatarPicker] = useState(false);
 
     const TOTAL_STATIONS = STATION_COUNT;
-    const avatars = ["1.png", "2.png", "3.png", "4.png", "5.png", "6.png"];
 
     useEffect(() => {
         const unsubscribeAuth = onAuthStateChanged(auth, (u) => {
@@ -136,26 +139,20 @@ const HomePage = () => {
             setUpcomingReservations(list.sort((a, b) => (a.date + a.startTime).localeCompare(b.date + b.startTime)));
         });
 
-        if (user) {
-            onSnapshot(doc(db, "users", user.uid), (docSnap) => {
+        const unsubUser = user
+            ? onSnapshot(doc(db, "users", user.uid), (docSnap) => {
                 if (docSnap.exists()) setUserData(docSnap.data());
-            });
-        }
-        return () => { unsubGlobal(); unsubRes(); };
+            })
+            : () => {};
+        return () => { unsubGlobal(); unsubRes(); unsubUser(); };
     }, [user]);
-
-    const changeAvatar = async (img) => {
-        try {
-            await updateDoc(doc(db, "users", user.uid), { avatar: img });
-            setShowAvatarPicker(false);
-        } catch (err) { alert("Error updating avatar"); }
-    };
 
     if (authLoading) return <div className="has-text-centered py-6"><i className="fas fa-circle-notch fa-spin has-text-primary"></i></div>;
 
     return (
         <div className="scroll-container">
             <style>{customStyles}</style>
+            {user && userData?.mustChangePassword && <ForcePasswordChange />}
             <div className="logo-wrapper"><img src="/logo.png" alt="Logo" className="logo-img" /></div>
 
             <p className="has-text-centered is-size-7 has-text-grey mb-4">
@@ -281,21 +278,21 @@ const HomePage = () => {
                 <p className="is-size-7 has-text-grey is-uppercase mb-3"><span className="live-pulse"></span>Live Sessions</p>
                 {livePlayers.length > 0 ? (
                     livePlayers.map((player, i) => (
-                        <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }} className="mb-3">
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <img src={`/avatars/${player.avatar || '1.png'}`} style={{ width: '24px', height: '24px', borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} alt="p" />
-                                <p className="is-size-7 has-text-white" style={{ margin: 0 }}>
+                        <div key={i} className="live-row mb-3">
+                            <div className="live-row-name">
+                                <img src={`/avatars/${player.avatar || '1.png'}`} style={{ width: '24px', height: '24px', borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} alt="" />
+                                <p className="is-size-7 has-text-white">
                                     <b>{player.name}</b> <span className="has-text-grey">on</span> <span className="has-text-primary">{player.machine}</span>
                                 </p>
                             </div>
-                            <div style={{ textAlign: 'right', flexShrink: 0, marginLeft: '12px' }}>
-                                <p className="is-size-7 has-text-weight-bold Henderson has-text-primary" style={{ margin: 0 }}>{player.timeLeft}m left</p>
+                            <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                                <p className="is-size-7 has-text-weight-bold has-text-primary" style={{ margin: 0 }}>{player.timeLeft}m left</p>
                                 <span style={{ fontSize: '10px', color: '#888' }}>Ends {player.endsAt}</span>
                             </div>
                         </div>
                     ))
                 ) : (
-                    <p className="is-size-7 has-text-grey-light italic">No players currently live.</p>
+                    <p className="is-size-7 has-text-grey-light is-italic">No players currently live.</p>
                 )}
             </div>
 
@@ -336,7 +333,7 @@ const HomePage = () => {
             <div className="interface-box" style={{ background: 'linear-gradient(145deg, #25D366 0%, #128C7E 100%)', border: 'none', textAlign: 'center' }}>
                 <p className="is-size-7 is-uppercase has-text-weight-bold" style={{ color: 'rgba(255,255,255,0.9)', marginBottom: '5px' }}>Instant Reservation</p>
                 <h3 className="title is-5 has-text-white mb-3">Book Your Session</h3>
-                <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
+                <div style={{ display: 'flex', gap: '10px', justifyContent: 'center', flexWrap: 'wrap' }}>
                     <a href="https://wa.me/94778662814" target="_blank" rel="noreferrer" className="button is-white is-small is-rounded has-text-weight-bold" style={{ color: '#128C7E' }}>
                         <span>WHATSAPP</span>
                     </a>

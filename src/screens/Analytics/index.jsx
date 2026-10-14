@@ -2,6 +2,8 @@ import React, { useEffect, useState } from "react";
 import { db } from "../../firebase";
 import { collection, getDocs, onSnapshot } from "firebase/firestore";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, LineChart, Line, Legend } from 'recharts';
+import useNavigatorSales from "../../hooks/useNavigatorSales";
+import { PERIOD_LABELS, getPeriodRange, isInRange } from "../../config/periods";
 
 const AnalyticsPage = () => {
     const [isAdmin, setIsAdmin] = useState(false);
@@ -13,6 +15,7 @@ const AnalyticsPage = () => {
     const [startDate, setStartDate] = useState("");
     const [endDate, setEndDate] = useState("");
     const [searchTerm, setSearchTerm] = useState("");
+    const navigatorSales = useNavigatorSales(isAdmin);
 
     useEffect(() => {
         if (isAdmin) {
@@ -34,49 +37,21 @@ const AnalyticsPage = () => {
         }
     }, [isAdmin]);
 
-    // Reusable timing boundaries parser mirroring original dashboard limit metrics
-    const getDateLimits = () => {
-        const now = new Date();
-        let startLimit = new Date(0);
-        let endLimit = new Date(now.getTime() + 86400000);
+    const dateRange = getPeriodRange(range, { startDate, endDate });
 
-        if (range === "today") startLimit = new Date(now.setHours(0, 0, 0, 0));
-        else if (range === "week") startLimit = new Date(now.setDate(now.getDate() - 7));
-        else if (range === "month") startLimit = new Date(now.setMonth(now.getMonth() - 1));
-        else if (range === "custom" && startDate && endDate) {
-            startLimit = new Date(startDate);
-            startLimit.setHours(0, 0, 0, 0);
-            endLimit = new Date(endDate);
-            endLimit.setHours(23, 59, 59, 999);
-        }
-        return { startLimit, endLimit };
-    };
-
-    const getFilteredData = () => {
-        const { startLimit, endLimit } = getDateLimits();
-
-        return allUsers.map(user => ({
+    const getFilteredData = () =>
+        allUsers.map(user => ({
             ...user,
-            filteredSessions: (user.sessions || []).filter(s => {
-                const sTime = new Date(s.startTime);
-                return sTime >= startLimit && sTime <= endLimit;
-            })
+            filteredSessions: (user.sessions || []).filter(s => isInRange(s.startTime, dateRange))
         }));
-    };
 
-    // New isolation layer parsing event invoices matching range constraints
-    const getFilteredEvents = () => {
-        const { startLimit, endLimit } = getDateLimits();
-
-        return allEvents.filter(event => {
-            // Checks eventDate field fallback to structural timestamp parameter if needed
-            const eTime = new Date(event.eventDate || event.createdAt);
-            return eTime >= startLimit && eTime <= endLimit;
-        });
-    };
+    // Event invoices are dated by the event day, falling back to when they were created
+    const getFilteredEvents = () =>
+        allEvents.filter(event => isInRange(event.eventDate ? `${event.eventDate}T00:00:00` : event.createdAt, dateRange));
 
     const filteredUsers = getFilteredData();
     const filteredEvents = getFilteredEvents(); // Parsed range events reference array
+    const filteredNavigator = navigatorSales.filter(x => isInRange(x.startTime, dateRange));
 
     // --- CHART LOGIC: DATE BY DATE ANALYSIS ---
     const getChartData = () => {
@@ -95,12 +70,20 @@ const AnalyticsPage = () => {
 
         // Appends filtered event bookings directly into matching daily coordinate keys
         filteredEvents.forEach(e => {
-            const dateKey = new Date(e.eventDate || e.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            const dateKey = new Date(e.eventDate ? `${e.eventDate}T00:00:00` : e.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
             if (!dailyMap[dateKey]) {
                 dailyMap[dateKey] = { date: dateKey, revenue: 0, visits: 0 };
             }
             dailyMap[dateKey].revenue += (parseFloat(e.amountPaid) || 0);
             // Event metrics are bundled separate from machine walk-in counts to keep counts accurate
+        });
+
+        filteredNavigator.forEach(x => {
+            const dateKey = new Date(x.startTime).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            if (!dailyMap[dateKey]) {
+                dailyMap[dateKey] = { date: dateKey, revenue: 0, visits: 0 };
+            }
+            dailyMap[dateKey].revenue += x.amountPaid;
         });
 
         // Convert map to sorted array
@@ -113,7 +96,8 @@ const AnalyticsPage = () => {
     );
     // Combines standard profile transactions with bulk commercial event payments
     const totalEventRevenue = filteredEvents.reduce((acc, e) => acc + (parseFloat(e.amountPaid) || 0), 0);
-    const totalRevenue = totalUserRevenue + totalEventRevenue;
+    const totalNavigatorRevenue = filteredNavigator.reduce((acc, x) => acc + x.amountPaid, 0);
+    const totalRevenue = totalUserRevenue + totalEventRevenue + totalNavigatorRevenue;
 
     const totalSessions = filteredUsers.reduce((acc, u) => acc + u.filteredSessions.length, 0);
     const activeUserCount = allUsers.filter(u => {
@@ -143,13 +127,17 @@ const AnalyticsPage = () => {
                 isEvent: true
             }));
 
+        const navigator = filteredNavigator.length > 0 && "navigator event stall".includes(searchTerm.toLowerCase())
+            ? [{ name: "💼 Navigator event stall", count: filteredNavigator.length, revenue: totalNavigatorRevenue, isEvent: true }]
+            : [];
+
         // Merges arrays together sorting top aggregate revenue returns descending
-        return [...spenders, ...events].sort((a, b) => b.revenue - a.revenue);
+        return [...spenders, ...events, ...navigator].sort((a, b) => b.revenue - a.revenue);
     };
 
     if (!isAdmin) return (
         <section className="section" style={{ background: '#1a1a1a', minHeight: '100vh', display: 'flex', alignItems: 'center' }}>
-            <div className="container has-text-centered">
+            <div className="container has-text-centered" style={{ width: "100%", minWidth: 0 }}>
                 <form className="box" style={{ maxWidth: '400px', margin: 'auto', background: '#252525', border: '1px solid #333' }} 
                     onSubmit={(e) => {
                         e.preventDefault();
@@ -165,21 +153,21 @@ const AnalyticsPage = () => {
     );
 
     return (
-        <section className="section" style={{ background: '#0a0a0a', minHeight: '100vh', color: 'white' }}>
+        <section className="section px-4" style={{ background: '#0a0a0a', minHeight: '100vh', color: 'white' }}>
             <div className="container">
                 
                 {/* HEADER */}
                 <div className="level mb-6">
                     <div className="level-left">
                         <div>
-                            <h1 className="title has-text-white mb-0">Intelligence Dashboard</h1>
+                            <h1 className="title is-3 has-text-white mb-0">Intelligence Dashboard</h1>
                             <p className="has-text-primary">Live Players: {activeUserCount}</p>
                         </div>
                     </div>
                     <div className="level-right">
-                        <div className="field is-grouped">
+                        <div className="field is-grouped is-grouped-multiline">
                             {range === "custom" && (
-                                <div className="control is-flex" style={{ gap: '5px' }}>
+                                <div className="control is-flex is-flex-wrap-wrap" style={{ gap: '5px' }}>
                                     <input className="input is-small is-dark" type="date" onChange={(e) => setStartDate(e.target.value)} />
                                     <input className="input is-small is-dark" type="date" onChange={(e) => setEndDate(e.target.value)} />
                                 </div>
@@ -189,7 +177,8 @@ const AnalyticsPage = () => {
                                     <select value={range} onChange={(e) => setRange(e.target.value)} style={{ background: '#252525', color: 'white' }}>
                                         <option value="today">Today</option>
                                         <option value="week">Last 7 Days</option>
-                                        <option value="month">Last 30 Days</option>
+                                        <option value="month">This Month</option>
+                                        <option value="last30">Last 30 Days</option>
                                         <option value="custom">Custom Range</option>
                                         <option value="lifetime">Lifetime</option>
                                     </select>
@@ -201,19 +190,19 @@ const AnalyticsPage = () => {
 
                 {/* STATS CARDS */}
                 <div className="columns is-multiline">
-                    <div className="column is-4">
+                    <div className="column is-12-mobile is-6-tablet is-4-desktop">
                         <div className="box" style={{ background: '#1a1a1a', border: '1px solid #333' }}>
                             <p className="heading has-text-grey">Period Revenue</p>
                             <p className="title is-3 has-text-success">Rs. {totalRevenue.toLocaleString()}</p>
                         </div>
                     </div>
-                    <div className="column is-4">
+                    <div className="column is-12-mobile is-6-tablet is-4-desktop">
                         <div className="box" style={{ background: '#1a1a1a', border: '1px solid #333' }}>
                             <p className="heading has-text-grey">Total Sessions</p>
                             <p className="title is-3 has-text-info">{totalSessions}</p>
                         </div>
                     </div>
-                    <div className="column is-4">
+                    <div className="column is-12-mobile is-6-tablet is-4-desktop">
                         <div className="box" style={{ background: '#1a1a1a', border: '1px solid #333' }}>
                             <p className="heading has-text-grey">New Signups</p>
                             <p className="title is-3 has-text-white">
@@ -228,7 +217,7 @@ const AnalyticsPage = () => {
                     {/* DATE BY DATE CHART */}
                     <div className="column is-12">
                         <div className="box" style={{ background: '#1a1a1a', border: 'none' }}>
-                            <h3 className="subtitle is-6 has-text-grey-light mb-5">Revenue Performance by Date ({range})</h3>
+                            <h3 className="subtitle is-6 has-text-grey-light mb-5">Revenue Performance by Date ({PERIOD_LABELS[range === "lifetime" ? "all" : range]})</h3>
                             <div style={{ width: '100%', height: 300 }}>
                                 <ResponsiveContainer>
                                     <BarChart data={getChartData()}>
@@ -255,7 +244,8 @@ const AnalyticsPage = () => {
                                     <input className="input is-small is-dark" type="text" placeholder="Search..." onChange={(e) => setSearchTerm(e.target.value)} />
                                 </div>
                             </div>
-                            <table className="table is-fullwidth is-dark" style={{ background: 'transparent' }}>
+                            <div className="table-container">
+                            <table className="table is-fullwidth is-dark" style={{ background: 'transparent', minWidth: '420px' }}>
                                 <thead>
                                     <tr>
                                         <th>Player / Client</th>
@@ -273,6 +263,7 @@ const AnalyticsPage = () => {
                                     ))}
                                 </tbody>
                             </table>
+                            </div>
                         </div>
                     </div>
                 </div>

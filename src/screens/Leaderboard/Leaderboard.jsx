@@ -7,15 +7,12 @@ const customStyles = `
   body { background-color: #080808; margin: 0; padding: 0; }
   
   .scroll-container {
-    height: 100vh;
-    overflow-y: auto;
+    min-height: calc(100vh - var(--nav-height));
     padding: 20px 15px;
     display: flex;
     flex-direction: column;
     align-items: center;
   }
-
-  .scroll-container::-webkit-scrollbar { display: none; }
 
   .interface-box {
     background: rgba(255, 255, 255, 0.03);
@@ -80,7 +77,7 @@ const Leaderboard = () => {
             <style>{customStyles}</style>
 
             {/* TOP NAVIGATION / LOGO */}
-            <div className="is-flex is-align-items-center is-justify-content-between w-100 mb-5" style={{ width: '100%', maxWidth: '400px' }}>
+            <div className="is-flex is-align-items-center is-justify-content-space-between mb-5" style={{ width: '100%', maxWidth: '400px' }}>
                 <Link to="/" style={{ color: 'white' }}>
                     <i className="fas fa-chevron-left mr-2"></i> Back
                 </Link>
@@ -101,14 +98,14 @@ const Leaderboard = () => {
                 
                 {players.length > 0 ? (
                     players.map((p, i) => (
-                        <div key={i} className="is-flex is-align-items-center is-justify-content-between mb-4">
-                            <div className="is-flex is-align-items-center">
+                        <div key={i} className="is-flex is-align-items-center is-justify-content-space-between mb-4">
+                            <div className="is-flex is-align-items-center" style={{ minWidth: 0 }}>
                                 {/* Rank Circles */}
-                                <div className={`rank-badge ${i === 0 ? 'gold' : i === 1 ? 'silver' : i === 2 ? 'bronze' : 'default-rank'}`}>
+                                <div style={{ flexShrink: 0 }} className={`rank-badge ${i === 0 ? 'gold' : i === 1 ? 'silver' : i === 2 ? 'bronze' : 'default-rank'}`}>
                                     {i + 1}
                                 </div>
                                 
-                                <figure className="image is-32x32 mr-3">
+                                <figure className="image is-32x32 mr-3" style={{ flexShrink: 0 }}>
                                     <img className="is-rounded" src={`/avatars/${p.avatar || '1.png'}`} style={{ border: '1px solid rgba(255,255,255,0.2)' }} alt="avatar"/>
                                 </figure>
                                 
@@ -117,7 +114,7 @@ const Leaderboard = () => {
                                 </span>
                             </div>
                             
-                            <div className="has-text-right">
+                            <div className="has-text-right ml-2" style={{ flexShrink: 0 }}>
                                 <p className="is-family-monospace has-text-primary has-text-weight-bold is-size-6">
                                     {p.time}
                                 </p>

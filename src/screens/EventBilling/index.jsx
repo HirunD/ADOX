@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { db } from "../../firebase";
 import { collection, addDoc, onSnapshot } from "firebase/firestore";
+import { editEventInvoice, voidEventInvoice } from "../../utils/paymentEdits";
 
 const EventBilling = () => {
   const [isAdmin, setIsAdmin] = useState(false);
@@ -23,6 +24,42 @@ const EventBilling = () => {
 
   // --- BLOCKING ACCORDION FOR REVENUE ---
   const [historyOpen, setHistoryOpen] = useState(true);
+
+  // --- CORRECTIONS (edit amount/method, or void a mistaken invoice) ---
+  const [correctingId, setCorrectingId] = useState(null);
+
+  const handleEditInvoice = async (inv) => {
+    const amountInput = window.prompt(`Correct amount (Rs.) for ${inv.clientName}:`, String(inv.amountPaid));
+    if (amountInput === null) return;
+    const amount = Number(amountInput);
+    if (amountInput.trim() === "" || !(amount >= 0)) return alert("Enter a valid amount.");
+    const methodInput = window.prompt("Payment method: CASH, CARD or BANK_TRANSFER", inv.method || "CASH");
+    if (methodInput === null) return;
+    const method = methodInput.trim().toUpperCase().replace(/\s+/g, "_");
+    if (!["CASH", "CARD", "BANK_TRANSFER"].includes(method)) return alert("Method must be CASH, CARD or BANK_TRANSFER.");
+
+    setCorrectingId(inv.id);
+    try {
+      await editEventInvoice(inv.id, { amountPaid: amount, method });
+    } catch (err) {
+      alert("Couldn't save: " + err.message);
+    }
+    setCorrectingId(null);
+  };
+
+  const handleVoidInvoice = async (inv) => {
+    const reason = window.prompt(
+      `Void the Rs. ${inv.amountPaid.toLocaleString()} invoice for ${inv.clientName}?\nIt will be removed from all revenue figures. Reason:`
+    );
+    if (reason === null) return;
+    setCorrectingId(inv.id);
+    try {
+      await voidEventInvoice(inv.id, reason.trim());
+    } catch (err) {
+      alert("Couldn't void: " + err.message);
+    }
+    setCorrectingId(null);
+  };
 
   // --- AUTHENTICATION CHECK ---
   const handleLogin = (e) => {
@@ -101,10 +138,10 @@ const EventBilling = () => {
       <div className="section" style={{ background: "#050505", minHeight: "100vh" }}>
         <form
           className="box"
-          style={{ maxWidth: "400px", margin: "100px auto", background: "#1a1a1a", border: "1px solid #333" }}
+          style={{ maxWidth: "400px", margin: "60px auto", background: "#1a1a1a", border: "1px solid #333" }}
           onSubmit={handleLogin}
         >
-          <h1 className="title has-text-white is-5 uppercase tracking-wide">Event Console Login</h1>
+          <h1 className="title has-text-white is-5">Event Console Login</h1>
           <input
             className="input is-dark mb-3"
             type="password"
@@ -288,6 +325,7 @@ const EventBilling = () => {
                           <th>Method</th>
                           <th>Notes</th>
                           <th className="has-text-right">Amount</th>
+                          <th></th>
                         </tr>
                       </thead>
                       <tbody>
@@ -304,16 +342,23 @@ const EventBilling = () => {
                               </td>
                               <td className="is-size-7"><span className="tag is-dark">{inv.method}</span></td>
                               <td className="is-size-7" style={{ maxWidth: "180px", whiteSpace: "normal", wordBreak: "break-word" }}>
-                                {inv.notes ? inv.notes : <span className="has-text-grey-dark italic">None</span>}
+                                {inv.notes ? inv.notes : <span className="has-text-grey is-italic">None</span>}
                               </td>
                               <td className="has-text-right has-text-weight-bold has-text-success">
                                 Rs. {inv.amountPaid.toLocaleString()}
+                                {inv.amountBeforeEdit !== undefined && (
+                                  <><br /><s className="has-text-grey has-text-weight-normal is-size-7">Rs. {Number(inv.amountBeforeEdit).toLocaleString()}</s></>
+                                )}
+                              </td>
+                              <td className="has-text-right" style={{ whiteSpace: "nowrap" }}>
+                                <button className="button is-small is-dark mr-1" disabled={correctingId !== null} onClick={() => handleEditInvoice(inv)}>Edit</button>
+                                <button className="button is-small is-danger is-outlined" disabled={correctingId !== null} onClick={() => handleVoidInvoice(inv)}>Void</button>
                               </td>
                             </tr>
                           ))
                         ) : (
                           <tr>
-                            <td colSpan="5" className="has-text-centered has-text-grey py-4 italic is-size-7">No logged event invoices found.</td>
+                            <td colSpan="6"className="has-text-centered has-text-grey py-4 is-italic is-size-7">No logged event invoices found.</td>
                           </tr>
                         )}
                       </tbody>

@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import AOS from "aos";
-import AboutPage from "./screens/AboutPage";
 import HomePage from "./screens/HomePage";
 import LoginPage from "./screens/LoginPage";
 import SignUpPage from "./screens/SignUp";
@@ -10,19 +9,15 @@ import PlayerReport from "./screens/PlayerReport";
 import AnalyticsPage from "./screens/Analytics";
 import RevenueDashboard from "./screens/RevenueDashboard/RevenueDashboard";
 import Leaderboard from "./screens/Leaderboard/Leaderboard";
-import AdminPricing from "./screens/AdminPricing";
-import ComingSoon from "./screens/ComingSoon";
+import OwnerPanel from "./screens/OwnerPanel";
 
-// Import your CSS for the loader (or add to your main CSS file)
 import "./App.css";
 import AdminReservations from "./screens/AdminReservations";
-import { Transaction } from "firebase/firestore";
 import TransactionsPage from "./screens/TransactionsPage";
 import PlayersList from "./screens/PlayerList";
 import MembershipSignup from "./screens/MembershipSignup";
 import ProfileBlast from "./screens/ProfileBlast";
 import EventBilling from "./screens/EventBilling";
-import NavigatorEvent from "./screens/NavigatorEvent";
 
 const App = () => {
     const [isLoading, setIsLoading] = useState(true);
@@ -54,10 +49,10 @@ const App = () => {
                 <BrowserRouter>
                     <Routes>
                         <Route path="/" element={<HomePage />} />
-                        {/* <Route path="/home" element={<HomePage />} /> */}
                         <Route path="/signup" element={<SignUpPage />} />
                         <Route path="/login" element={<LoginPage />} />
                         <Route path="/admin" element={<AdminPanel />} />
+                        <Route path="/owner" element={<OwnerPanel />} />
                         <Route path="/reserve" element={<AdminReservations />} />
                         <Route path="/report/:uid" element={<PlayerReport />} />
                         <Route path="/admin/analytics" element={<AnalyticsPage />} />
@@ -68,10 +63,6 @@ const App = () => {
                         <Route path="/members" element={<MembershipSignup />} />
                         <Route path="/blast" element={<ProfileBlast />} />
                         <Route path="/eventbilling" element={<EventBilling />} />
-                        <Route path="/navigator" element={<NavigatorEvent />} />
-
-
-                        {/* <Route path="/price" element={<AdminPricing />} /> */}
                     </Routes>
                 </BrowserRouter>
             </div>

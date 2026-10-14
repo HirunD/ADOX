@@ -1,7 +1,8 @@
 import React, { useState } from "react";
 import { auth } from "../../firebase";
 import { signInWithEmailAndPassword } from "firebase/auth";
-import { useNavigate, Link } from "react-router-dom"; 
+import { useNavigate, Link } from "react-router-dom";
+import { loginEmailsFor } from "../../utils/authEmail";
 
 const LoginPage = () => {
     const [identifier, setIdentifier] = useState(""); // Can be email or phone
@@ -16,17 +17,17 @@ const LoginPage = () => {
         setLoading(true);
         setError("");
 
-        let finalEmail = identifier;
-
-        // Logic: If it's a 10-digit number, treat it as a phone-shadow-email
-        const phoneRegex = /^[0-9]{10}$/;
-        if (phoneRegex.test(identifier)) {
-            finalEmail = `${identifier}@adox.com`;
-        }
+        // A phone number becomes <phone>@adoxgaming.com (falling back to the old @adox.com)
+        const [firstEmail, ...fallbackEmails] = loginEmailsFor(identifier);
 
         try {
-            await signInWithEmailAndPassword(auth, finalEmail, password);
-            navigate("/"); 
+            try {
+                await signInWithEmailAndPassword(auth, firstEmail, password);
+            } catch (err) {
+                if (!fallbackEmails.length || !["auth/invalid-credential", "auth/user-not-found"].includes(err.code)) throw err;
+                await signInWithEmailAndPassword(auth, fallbackEmails[0], password);
+            }
+            navigate("/");
         } catch (err) {
             console.error(err.code);
             if (err.code === "auth/invalid-credential" || err.code === "auth/user-not-found") {
@@ -44,9 +45,9 @@ const LoginPage = () => {
             <div className="hero-body">
                 <div className="container">
                     <div className="columns is-centered">
-                        <div className="column is-4-tablet is-4-desktop is-3-widescreen">
+                        <div className="column is-8-tablet is-6-desktop is-4-widescreen">
                             <form 
-                                className="box pt-6 pb-6" 
+                                className="box py-6 px-5"
                                 style={{ 
                                     background: '#1a1a1a', 
                                     border: '1px solid #333', 
@@ -115,7 +116,7 @@ const LoginPage = () => {
                             </form>
                             
                             <div className="has-text-centered mt-5">
-                                <Link to="/admin" className="is-size-7 has-text-grey-darker" style={{ textDecoration: 'none' }}>
+                                <Link to="/admin" className="is-size-7 has-text-grey" style={{ textDecoration: 'none' }}>
                                     Admin Access
                                 </Link>
                             </div>

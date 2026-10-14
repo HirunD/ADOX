@@ -9,9 +9,6 @@ createRoot(document.getElementById("root")).render(
     <StrictMode>
         <SnackbarProvider maxSnack={3}>
             <NavBar />
-            <br></br>
-            <br></br>
-
             <App />
         </SnackbarProvider>
     </StrictMode>

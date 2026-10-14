@@ -47,7 +47,7 @@ const MembershipSignup = () => {
         const userDoc = querySnapshot.docs[0];
         setFoundUser({ id: userDoc.id, ...userDoc.data() });
       }
-    } catch (error) {
+    } catch {
       setStatus({ type: "is-danger", msg: "Search error." });
     }
     setLoading(false);
@@ -79,7 +79,7 @@ const MembershipSignup = () => {
       setStatus({ type: "is-success", msg: `Membership activated for ${foundUser.fullName}!` });
       setFoundUser(null);
       setPhone("");
-    } catch (error) {
+    } catch {
       setStatus({ type: "is-danger", msg: "Processing error." });
     }
     setLoading(false);
@@ -88,8 +88,8 @@ const MembershipSignup = () => {
   // --- ADMIN LOCK SCREEN ---
   if (!isAdmin) {
     return (
-      <section className="section" style={{ background: '#050505', minHeight: '100vh', display: 'flex', alignItems: 'center' }}>
-        <div className="container has-text-centered">
+      <section className="section px-4" style={{ background: '#050505', minHeight: 'calc(100vh - var(--nav-height))', display: 'flex', alignItems: 'center' }}>
+        <div className="container has-text-centered" style={{ width: "100%", minWidth: 0 }}>
           <form className="box" style={{ maxWidth: '400px', margin: 'auto', background: '#1a1a1a', border: '1px solid #333' }} 
             onSubmit={handleAdminUnlock}>
             <h2 className="title has-text-white is-4">Membership Access</h2>
@@ -113,7 +113,7 @@ const MembershipSignup = () => {
     <div className="section" style={{ background: "#050505", minHeight: "100vh" }}>
       <div className="container">
         <div className="columns is-centered">
-          <div className="column is-4">
+          <div className="column is-8-tablet is-6-desktop is-4-widescreen">
             <div className="box" style={{ background: "#1a1a1a", border: "1px solid #333", color: "white" }}>
               <div className="level is-mobile mb-5">
                 <div className="level-left">

@@ -120,7 +120,7 @@ const AdminReservations = () => {
             });
             alert("✅ Reservation Saved!");
             setBooking({ ...booking, customerName: "", phone: "", userId: null });
-        } catch (err) {
+        } catch {
             alert("Error saving reservation");
         }
         setLoading(false);
@@ -129,7 +129,7 @@ const AdminReservations = () => {
     // --- 1. RENDER LOCK SCREEN ---
     if (!isAuthenticated) {
         return (
-            <div style={{ background: "#050505", height: "100vh", display: "flex", justifyContent: "center", alignItems: "center", padding: "20px" }}>
+            <div style={{ background: "#050505", minHeight: "calc(100vh - var(--nav-height))", display: "flex", justifyContent: "center", alignItems: "center", padding: "20px" }}>
                 <div style={{ background: "#161616", padding: "30px", borderRadius: "20px", border: "1px solid #222", width: "100%", maxWidth: "350px", textAlign: "center" }}>
                     <h2 className="title is-5 has-text-white mb-5">Admin Login</h2>
                     <form onSubmit={handleLogin}>

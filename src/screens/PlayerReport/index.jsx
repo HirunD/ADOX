@@ -95,27 +95,22 @@ const PlayerReport = () => {
     document.body.removeChild(link);
 };
     return (
-        <section className="section has-background-white-bis" style={{ minHeight: '100vh' }}>
+        <section className="section px-4 has-background-white-bis" style={{ minHeight: '100vh' }}>
             <div className="container" style={{ maxWidth: '800px' }}>
                 {/* Header Controls */}
-                <div className="level is-mobile mb-5">
-                    <div className="level-left">
-                        <button className="button is-small" onClick={() => navigate(-1)}>← Back</button>
-                    </div>
-                    <div className="level-right">
-                        <div className="level-right">
-    <button className="button is-small is-info is-light mr-2" onClick={exportToCSV}>
-        📥 Export All Data (CSV)
-    </button>
-    <button className="button is-small is-dark" onClick={() => window.print()}>
-        Print PDF
-    </button>
-</div>
-                        <button className="button is-small is-dark" onClick={() => window.print()}>Print PDF</button>
+                <div className="is-flex is-justify-content-space-between is-flex-wrap-wrap mb-5" style={{ gap: '8px' }}>
+                    <button className="button is-small" onClick={() => navigate(-1)}>← Back</button>
+                    <div className="buttons mb-0">
+                        <button className="button is-small is-info is-light mb-0" onClick={exportToCSV}>
+                            📥 Export All Data (CSV)
+                        </button>
+                        <button className="button is-small is-dark mb-0" onClick={() => window.print()}>
+                            Print PDF
+                        </button>
                     </div>
                 </div>
 
-                <div className="box p-6">
+                <div className="box p-5">
                     {/* Report Header */}
                     <div className="has-text-centered mb-6">
                         <h1 className="title is-3">PLAYER ACTIVITY REPORT</h1>
@@ -160,6 +155,7 @@ const PlayerReport = () => {
 
                     {/* Detailed Log Table */}
                     <h2 className="title is-5 mt-6">Detailed Activity Log</h2>
+                    <div className="table-container">
                     <table className="table is-fullwidth is-striped is-hoverable">
                         <thead>
                             <tr className="has-background-white-ter">
@@ -187,8 +183,9 @@ const PlayerReport = () => {
                             )}
                         </tbody>
                     </table>
+                    </div>
 
-                    <div className="mt-6 has-text-centered border-top pt-5">
+                    <div className="mt-6 has-text-centered pt-5">
                         <p className="is-size-7 has-text-grey">Report generated on {new Date().toLocaleString()}</p>
                     </div>
                 </div>

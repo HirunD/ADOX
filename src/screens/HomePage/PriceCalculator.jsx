@@ -1,8 +1,8 @@
 import React, { useState } from "react";
 import { STATIONS, getStationCapacity, getStationRate, getStationPrice } from "../../config/stations";
+import useRates from "../../hooks/useRates";
 
 const DURATIONS = [0.5, 1, 2];
-const EVENT_RATE_PER_HOUR = 2000;
 const WHATSAPP_NUMBER = "94778662814";
 
 const formatDuration = (h) => (h === 0.5 ? "30m" : `${h}h`);
@@ -22,6 +22,7 @@ const PriceCalculator = ({ livePlayers, reservations }) => {
   const [partySize, setPartySize] = useState(1);
   const [hours, setHours] = useState(1);
   const [eventHours, setEventHours] = useState(3);
+  const rates = useRates();
 
   const capacity = getStationCapacity(station);
   const isToday = date === todayStr();
@@ -30,8 +31,8 @@ const PriceCalculator = ({ livePlayers, reservations }) => {
   // needing an effect just to mirror it back into state.
   const effectivePartySize = partySize > capacity ? 1 : partySize;
 
-  const price = getStationPrice(effectivePartySize, hours);
-  const eventPrice = Math.round(eventHours * EVENT_RATE_PER_HOUR);
+  const price = getStationPrice(effectivePartySize, hours, rates);
+  const eventPrice = Math.round(eventHours * rates.eventPerHour);
 
   const busySession = isToday ? livePlayers.find((p) => p.machine === station) : null;
   const bookingsThatDay = (reservations || [])
@@ -56,7 +57,7 @@ const PriceCalculator = ({ livePlayers, reservations }) => {
     <div className="interface-box">
       <p className="is-size-7 has-text-grey is-uppercase mb-3">Price Calculator</p>
 
-      <div className="buttons has-addons mb-3">
+      <div className="buttons has-addons mb-3" style={{ flexWrap: "nowrap" }}>
         <button
           className={`button is-small ${mode === "station" ? "is-primary" : "is-dark"}`}
           onClick={() => setMode("station")}
@@ -100,20 +101,20 @@ const PriceCalculator = ({ livePlayers, reservations }) => {
           <div className="columns is-mobile mb-2">
             <div className="column">
               <button
-                className={`button is-small is-fullwidth ${effectivePartySize === 1 ? "is-primary" : "is-dark"}`}
+                className={`button is-small is-fullwidth is-wrap ${effectivePartySize === 1 ? "is-primary" : "is-dark"}`}
                 onClick={() => setPartySize(1)}
               >
-                Solo — Rs. {getStationRate(1)}/hr
+                Solo — Rs. {getStationRate(1, rates)}/hr
               </button>
             </div>
             <div className="column">
               <button
                 disabled={capacity < 2}
                 title={capacity < 2 ? `${station} is solo-only` : ""}
-                className={`button is-small is-fullwidth ${effectivePartySize === 2 ? "is-primary" : "is-dark"}`}
+                className={`button is-small is-fullwidth is-wrap ${effectivePartySize === 2 ? "is-primary" : "is-dark"}`}
                 onClick={() => setPartySize(2)}
               >
-                Double — Rs. {capacity < 2 ? "—" : getStationRate(2)}/hr
+                Double — Rs. {capacity < 2 ? "—" : getStationRate(2, rates)}/hr
               </button>
             </div>
           </div>
@@ -136,18 +137,18 @@ const PriceCalculator = ({ livePlayers, reservations }) => {
             className="box mt-3"
             style={{ background: "#111", border: `1px solid ${busySession ? "#ff3860" : bookingsThatDay.length ? "#ffdd57" : "#00d1b2"}` }}
           >
-            <div className="level is-mobile mb-0">
+            <div className="level is-mobile mb-0" style={{ gap: "8px" }}>
               <div className="level-left">
                 <div>
                   <p className="is-size-7 has-text-grey mb-0">Estimated Price</p>
                   <p className="title is-4 has-text-white mb-0">Rs. {price}</p>
                 </div>
               </div>
-              <div className="level-right">
+              <div className="level-right" style={{ flexShrink: 1, minWidth: 0 }}>
                 {busySession ? (
-                  <span className="tag is-danger is-light">Busy till {busySession.endsAt}</span>
+                  <span className="tag is-danger is-light is-wrap">Busy till {busySession.endsAt}</span>
                 ) : bookingsThatDay.length > 0 ? (
-                  <span className="tag is-warning is-light">
+                  <span className="tag is-warning is-light is-wrap">
                     {bookingsThatDay.length} booking(s): {bookingsThatDay.map((b) => b.startTime).join(", ")}
                   </span>
                 ) : (
@@ -170,7 +171,7 @@ const PriceCalculator = ({ livePlayers, reservations }) => {
       ) : (
         <>
           <p className="is-size-7 has-text-grey-light mb-1">
-            Hours (standard birthday-party rate: Rs. {EVENT_RATE_PER_HOUR}/hr)
+            Hours (standard birthday-party rate: Rs. {rates.eventPerHour}/hr)
           </p>
           <div className="field has-addons mb-2">
             <div className="control is-expanded">

@@ -3,6 +3,7 @@ import { auth, db } from "../../firebase";
 import { createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
 import { doc, setDoc } from "firebase/firestore";
 import { useNavigate } from "react-router-dom";
+import { authEmailFor, isPhone, normalizePhone } from "../../utils/authEmail";
 
 const SignUpPage = () => {
     const [formData, setFormData] = useState({
@@ -27,7 +28,6 @@ const SignUpPage = () => {
 
     const validateForm = () => {
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        const phoneRegex = /^[0-9]{10}$/;
 
         if (!formData.fullName.trim()) return "Full name is required.";
         if (Number(formData.age) <= 0) return "Please enter a valid age.";
@@ -35,7 +35,7 @@ const SignUpPage = () => {
         if (!formData.email && !formData.phone) return "Either Email or Phone is required.";
         
         if (formData.email && !emailRegex.test(formData.email)) return "Invalid email format.";
-        if (formData.phone && !phoneRegex.test(formData.phone)) return "Phone must be 10 digits.";
+        if (formData.phone && !isPhone(formData.phone)) return "Phone must be 10 digits.";
         
         return null;
     };
@@ -49,7 +49,8 @@ const SignUpPage = () => {
         setError("");
 
         // LOGIC: Use email if provided, otherwise use phone-shadow-email
-        const authEmail = formData.email ? formData.email : `${formData.phone}@adox.com`;
+        const authEmail = authEmailFor(formData);
+        const phone = formData.phone ? normalizePhone(formData.phone) : null;
 
         try {
             // 1. Create Auth Account with Password (No OTP needed)
@@ -67,7 +68,7 @@ const SignUpPage = () => {
                 uid: user.uid,
                 fullName: formData.fullName,
                 email: formData.email || null,
-                phone: formData.phone || null,
+                phone,
                 avatar: formData.avatar,
                 sessions: [],
                 totalHours: 0,
@@ -88,10 +89,10 @@ const SignUpPage = () => {
     };
 
     return (
-        <section className="section" style={{ background: '#050505', minHeight: '100vh', display: 'flex', alignItems: 'center' }}>
-            <div className="container">
+        <section className="section px-4" style={{ background: '#050505', minHeight: 'calc(100vh - var(--nav-height))', display: 'flex', alignItems: 'center' }}>
+            <div className="container" style={{ width: "100%", minWidth: 0 }}>
                 <div className="columns is-centered">
-                    <div className="column is-5">
+                    <div className="column is-10-tablet is-7-desktop is-5-widescreen">
                         <form className="box" style={{ background: '#111', border: '1px solid #333', color: 'white', borderRadius: '20px' }} onSubmit={handleSignUp}>
                             <h1 className="title is-4 has-text-white has-text-centered mb-5">Create Player ID</h1>
                             
@@ -102,7 +103,7 @@ const SignUpPage = () => {
                                 <label className="label has-text-grey-light is-size-7 has-text-centered">CHOOSE YOUR AVATAR</label>
                                 <div className="columns is-multiline is-mobile is-centered mt-2">
                                     {avatars.map((img) => (
-                                        <div key={img} className="column is-6-mobile is-4-tablet" onClick={() => setFormData({...formData, avatar: img})}>
+                                        <div key={img} className="column is-4-mobile is-4-tablet" onClick={() => setFormData({...formData, avatar: img})}>
                                             <div style={{ 
                                                 cursor: 'pointer', 
                                                 borderRadius: '15px', 

@@ -13,20 +13,26 @@ import {
   getDocs,
   onSnapshot,
   setDoc,
-  addDoc,
 } from "firebase/firestore";
 import {
   MACHINE_NAMES,
   TOTAL_STATIONS,
   getStationRate,
   getStationPrice,
-  SINGLE_RACE_PRICE,
-  QUICK_CASH_PRICES,
   getStationCapacity,
 } from "../../config/stations";
+import useRates from "../../hooks/useRates";
+import { DEFAULT_PASSWORD } from "../../config/defaultPassword";
+import { authEmailFor, isPhone, normalizePhone } from "../../utils/authEmail";
+import useNavigatorSales from "../../hooks/useNavigatorSales";
+import { PERIOD_LABELS, getPeriodRange, isInRange } from "../../config/periods";
+import "./index.css";
 
 const AdminPanel = () => {
   const [isAdmin, setIsAdmin] = useState(false);
+  const rates = useRates();
+  const navigatorSales = useNavigatorSales();
+  const QUICK_CASH_PRICES = [rates.quickCash1, rates.quickCash2];
   const [password, setPassword] = useState("");
   const [userData, setUserData] = useState(null);
   const [friendData, setFriendData] = useState(null);
@@ -66,51 +72,126 @@ const AdminPanel = () => {
   const videoRef = useRef(null);
   const scannerRef = useRef(null);
   const audioRef = useRef(new Audio("/success.mp3"));
+  const lastScanRef = useRef({ uid: null, at: 0 });
 
-  // --- QUICK WALK-IN STATE ---
-  const [quickMachine, setQuickMachine] = useState("");
+  // "starting" | "on" | "error"
+  const [cameraState, setCameraState] = useState("starting");
+  const [cameraError, setCameraError] = useState("");
+  const [cameraAttempt, setCameraAttempt] = useState(0);
+  const [scanNote, setScanNote] = useState("");
 
   // --- CAMERA INITIALIZATION ---
+  // The camera used to fail silently: start() rejections were only logged,
+  // and React StrictMode's mount → unmount → mount would destroy the first
+  // scanner while the second grabbed the camera, which some devices reject
+  // as "in use". Now each start is retried a few times, failures are shown
+  // on screen with a Retry button, and a dropped stream is detected.
   useEffect(() => {
-    if (isAdmin && videoRef.current && !scannerRef.current) {
-      scannerRef.current = new QrScanner(
-        videoRef.current,
-        (result) => {
-          if (result) {
-            try {
-              const data = JSON.parse(result.data);
-              if (data.uid) handleQrScan(data.uid);
-            } catch (e) {
-              console.error("Invalid QR Data");
-            }
-          }
-        },
-        { highlightScanRegion: true, highlightCodeOutline: true },
-      );
-      scannerRef.current
-        .start()
-        .catch((err) => console.error("Camera Start Error:", err));
-    }
-    return () => {
-      if (scannerRef.current) {
-        scannerRef.current.destroy();
-        scannerRef.current = null;
+    if (!isAdmin || !videoRef.current) return;
+
+    let cancelled = false;
+    let retryTimer = null;
+    let endedTrack = null;
+    const onTrackEnded = () => {
+      if (cancelled) return;
+      setCameraError("Camera disconnected.");
+      setCameraState("error");
+    };
+
+    const scanner = new QrScanner(
+      videoRef.current,
+      (result) => {
+        let uid;
+        try {
+          uid = JSON.parse(result.data).uid;
+        } catch {
+          return; // not one of our player QR codes
+        }
+        if (!uid) return;
+        // The callback fires on every frame the code is visible — only
+        // handle the same player once every few seconds.
+        const now = Date.now();
+        if (lastScanRef.current.uid === uid && now - lastScanRef.current.at < 4000) return;
+        lastScanRef.current = { uid, at: now };
+        handleQrScan(uid);
+      },
+      {
+        preferredCamera: "environment",
+        maxScansPerSecond: 5,
+        highlightScanRegion: true,
+        highlightCodeOutline: true,
+        returnDetailedScanResult: true,
+      },
+    );
+    scannerRef.current = scanner;
+    setCameraState("starting");
+    setCameraError("");
+
+    const start = async (retriesLeft) => {
+      if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+        setCameraError("Camera needs HTTPS (or localhost) to work.");
+        setCameraState("error");
+        return;
+      }
+      try {
+        await scanner.start();
+        if (cancelled) return;
+        endedTrack = videoRef.current?.srcObject?.getVideoTracks?.()[0] || null;
+        endedTrack?.addEventListener("ended", onTrackEnded);
+        setCameraState("on");
+      } catch (err) {
+        if (cancelled) return;
+        const name = err?.name || "";
+        // Permission / missing-device errors won't fix themselves by retrying.
+        const permanent = name === "NotAllowedError" || name === "SecurityError" || name === "NotFoundError" || String(err).includes("not found");
+        if (!permanent && retriesLeft > 0) {
+          retryTimer = setTimeout(() => start(retriesLeft - 1), 1200);
+          return;
+        }
+        console.error("Camera Start Error:", err);
+        setCameraError(
+          name === "NotAllowedError" || name === "SecurityError"
+            ? "Camera permission is blocked. Allow it in the browser's site settings, then Retry."
+            : name === "NotFoundError" || String(err).includes("not found")
+              ? "No camera found on this device."
+              : name === "NotReadableError"
+                ? "Camera is busy (another tab or app may be using it)."
+                : "Couldn't start the camera.",
+        );
+        setCameraState("error");
       }
     };
-  }, [isAdmin]);
+    start(3);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(retryTimer);
+      endedTrack?.removeEventListener("ended", onTrackEnded);
+      scanner.destroy();
+      if (scannerRef.current === scanner) scannerRef.current = null;
+    };
+  }, [isAdmin, cameraAttempt]);
 
   const handleQrScan = async (uid) => {
-    const userDoc = await getDoc(doc(db, "users", uid));
-    if (userDoc.exists()) {
-      audioRef.current.play().catch(() => { });
-      setUserData({ ...userDoc.data(), uid });
+    try {
+      const userDoc = await getDoc(doc(db, "users", uid));
+      if (userDoc.exists()) {
+        audioRef.current.play().catch(() => { });
+        setUserData({ ...userDoc.data(), uid });
+        setScanNote("");
+      } else {
+        setScanNote("QR scanned, but no matching player was found.");
+      }
+    } catch (err) {
+      console.error(err);
+      setScanNote("Scan failed — check the connection.");
     }
   };
 
   // --- DATA LISTENERS ---
   useEffect(() => {
     // BACKEND GLOBAL DISCOUNT CONFIGURATION LISTENER
-    onSnapshot(doc(db, "settings", "discount"), (docSnap) => {
+    const unsubDiscount = onSnapshot(doc(db, "settings", "discount"), (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
         setGlobalDiscount({
@@ -173,26 +254,19 @@ const AdminPanel = () => {
     });
 
     return () => {
+      unsubDiscount();
       unsubTxn();
       unsubLive();
     };
   }, []);
 
   useEffect(() => {
-    const now = new Date();
+    const range = getPeriodRange(txnFilter);
 
-    // 1. Filter Sessions (Usage Revenue)
-    const filteredSessions = transactions.filter((t) => {
-      const tDate = new Date(t.startTime);
-      if (txnFilter === "today") return tDate.toDateString() === now.toDateString();
-      if (txnFilter === "week") {
-        const wAgo = new Date();
-        wAgo.setDate(now.getDate() - 7);
-        return tDate >= wAgo;
-      }
-      if (txnFilter === "month") return tDate.getMonth() === now.getMonth() && tDate.getFullYear() === now.getFullYear();
-      return true;
-    });
+    // 1. Filter Sessions (Usage Revenue) + Navigator event-stall sales
+    const filteredSessions = [...transactions, ...navigatorSales].filter((t) =>
+      isInRange(t.startTime, range),
+    );
 
     // 2. Fetch & Filter Membership Invoices
     const syncInvoices = async () => {
@@ -208,18 +282,7 @@ const AdminPanel = () => {
         const data = doc.data();
         const iDate = data.timestamp?.toDate() || new Date(data.timestamp);
 
-        let matches = false;
-        if (txnFilter === "today") matches = iDate.toDateString() === now.toDateString();
-        else if (txnFilter === "week") {
-          const wAgo = new Date(); wAgo.setDate(now.getDate() - 7);
-          matches = iDate >= wAgo;
-        }
-        else if (txnFilter === "month") {
-          matches = iDate.getMonth() === now.getMonth() && iDate.getFullYear() === now.getFullYear();
-        }
-        else matches = true;
-
-        if (matches) {
+        if (isInRange(iDate, range)) {
           const isMembershipExpired = data.membershipExpiry ? new Date(data.membershipExpiry) < now : false;
 
           invTotal += (Number(data.amountPaid) || 0);
@@ -245,7 +308,7 @@ const AdminPanel = () => {
     };
 
     syncInvoices();
-  }, [transactions, txnFilter]);
+  }, [transactions, navigatorSales, txnFilter]);
 
   const alertedSessions = useRef(new Set());
   useEffect(() => {
@@ -311,24 +374,28 @@ const AdminPanel = () => {
   // --- QUICK REGISTER FUNCTION ---
   const handleQuickRegister = async (e) => {
     e.preventDefault();
-    if (!regForm.name || !regForm.phone || !regForm.email)
+    if (!regForm.name || !regForm.phone)
       return alert("Fill required fields!");
+    if (!isPhone(regForm.phone))
+      return alert("Phone must be 10 digits (e.g. 0771234567).");
     setIsRegistering(true);
     try {
+      // No email given -> the account uses <phone>@adoxgaming.com
       const userCredential = await createUserWithEmailAndPassword(
         auth,
-        regForm.email,
-        "adoxgg",
+        authEmailFor(regForm),
+        DEFAULT_PASSWORD,
       );
       const uid = userCredential.user.uid;
       const newUserData = {
         fullName: regForm.name,
-        phone: regForm.phone,
-        email: regForm.email,
+        phone: normalizePhone(regForm.phone),
+        email: regForm.email.trim() || null,
         age: regForm.age,
         sessions: [],
         bonusMinutes: 0,
         rewardClaimed: false,
+        mustChangePassword: true,
         createdAt: new Date().toISOString(),
       };
       await setDoc(doc(db, "users", uid), newUserData);
@@ -459,7 +526,7 @@ const AdminPanel = () => {
         setIsUpdating(false);
         setLapTime("");
       }, 800);
-    } catch (e) {
+    } catch {
       alert("Save Error");
       setIsUpdating(false);
     }
@@ -471,75 +538,51 @@ const AdminPanel = () => {
 
   if (!isAdmin)
     return (
-      <div
-        className="section"
-        style={{ background: "#050505", minHeight: "100vh" }}
-      >
+      <div className="ap-login">
         <form
-          className="box"
-          style={{
-            maxWidth: "400px",
-            margin: "100px auto",
-            background: "#1a1a1a",
-          }}
+          className="ap-login-card"
           onSubmit={(e) => {
             e.preventDefault();
             if (password === import.meta.env.VITE_ADMIN_PASSWORD)
               setIsAdmin(true);
+            else alert("Incorrect password");
           }}
         >
-          <h1 className="title has-text-white">Admin Login</h1>
+          <div className="ap-login-icon">
+            <i className="fas fa-terminal"></i>
+          </div>
+          <h1>Admin Login</h1>
+          <p>Front desk console</p>
           <input
-            className="input is-dark mb-3"
+            className="input"
             type="password"
+            placeholder="Password"
+            autoFocus
             value={password}
             onChange={(e) => setPassword(e.target.value)}
           />
-          <button className="button is-primary is-fullwidth">Login</button>
+          <button className="button is-primary is-fullwidth has-text-weight-bold">Login</button>
         </form>
       </div>
     );
 
+  const promoRate =
+    globalDiscount.bool && globalDiscount.percentage > 0
+      ? globalDiscount.percentage > 1 ? globalDiscount.percentage / 100 : globalDiscount.percentage
+      : 0;
+
+  const formatLeft = (secsLeft) => {
+    const s = Math.max(0, secsLeft);
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const sec = String(s % 60).padStart(2, "0");
+    return h > 0 ? `${h}:${String(m).padStart(2, "0")}:${sec}` : `${m}:${sec}`;
+  };
+
   return (
-    <div
-      className="section"
-      style={{
-        background: "#050505",
-        minHeight: "100vh",
-        padding: "1.5rem 0.75rem",
-      }}
-    >
-      {/* ADMIN NAVIGATION HEADER */}
-      <div className="tabs is-boxed mb-5">
-        <ul style={{ borderBottomColor: '#333' }}>
-          <li className="is-active">
-            <a style={{ background: '#1a1a1a', color: '#00d1b2', borderColor: '#333' }}>
-              <span className="icon is-small"><i className="fas fa-terminal"></i></span>
-              <span>Console</span>
-            </a>
-          </li>
-          <li>
-            <a href="/admin/analytics" style={{ color: '#fff' }}>
-              <span className="icon is-small"><i className="fas fa-chart-line"></i></span>
-              <span>Analytics</span>
-            </a>
-          </li>
-          <li>
-            <a href="/members" style={{ color: '#fff' }}>
-              <span className="icon is-small"><i className="fas fa-chart-line"></i></span>
-              <span>Members Sign up</span>
-            </a>
-          </li>
-          <li>
-            <a href="/users" style={{ color: '#fff' }}>
-              <span className="icon is-small"><i className="fas fa-users"></i></span>
-              <span>Player DB</span>
-            </a>
-          </li>
-        </ul>
-      </div>
+    <div className="ap-page">
       {/* RECEIPT PRINTING AREA */}
-      <div id="receipt-print" style={{ display: "none" }}>
+      <div id="receipt-print">
         {receiptData && (
           <div
             style={{
@@ -576,189 +619,225 @@ const AdminPanel = () => {
         )}
       </div>
 
-      <div className="container is-fluid">
-        <div className="columns is-multiline">
+      <div className="ap-wrap">
+        {/* ADMIN NAVIGATION HEADER */}
+        <header className="ap-header">
+          <nav className="ap-nav">
+            <a className="is-active">
+              <i className="fas fa-terminal"></i>
+              <span>Console</span>
+            </a>
+            <a href="/admin/analytics">
+              <i className="fas fa-chart-line"></i>
+              <span>Analytics</span>
+            </a>
+            <a href="/members">
+              <i className="fas fa-id-card"></i>
+              <span>Members Sign up</span>
+            </a>
+            <a href="/users">
+              <i className="fas fa-users"></i>
+              <span>Player DB</span>
+            </a>
+          </nav>
+          <div className="ap-sub">
+            <span className="ap-chip is-accent">
+              <span className="ap-dot is-live"></span>
+              {occupiedCount}/{TOTAL_CAPACITY} stations in use
+            </span>
+            {promoRate > 0 && (
+              <span className="ap-chip is-danger">
+                <i className="fas fa-tag"></i>
+                {Math.round(promoRate * 100)}% promo active
+              </span>
+            )}
+          </div>
+        </header>
+
+        <div className="ap-grid">
           {/* SIDEBAR: LIVE STATUS & QUICK WALK-IN */}
-          <div className="column is-12-tablet is-4-desktop">
-            <div style={{ position: "sticky", top: "1rem" }}>
-              {/* QUICK REGISTER */}
-              <div
-                className="box mb-4"
-                style={{ background: "#1a1a1a", border: "1px solid #00d1b2" }}
-              >
-                <h3 className="subtitle is-6 has-text-primary mb-3">
-                  🆕 Quick Register Player
+          <aside className="ap-side">
+            {/* QUICK REGISTER */}
+            <div className="ap-card is-accent">
+              <div className="ap-card-head">
+                <h3 className="ap-card-title">
+                  <i className="fas fa-user-plus" style={{ color: "var(--ap-accent)" }}></i>
+                  Quick Register Player
                 </h3>
-                <form onSubmit={handleQuickRegister}>
-                  <div className="field">
-                    <input
-                      className="input is-small is-dark mb-2"
-                      placeholder="Name"
-                      value={regForm.name}
-                      onChange={(e) =>
-                        setRegForm({ ...regForm, name: e.target.value })
-                      }
-                      required
-                    />
-                    <input
-                      className="input is-small is-dark mb-2"
-                      placeholder="Phone"
-                      value={regForm.phone}
-                      onChange={(e) =>
-                        setRegForm({ ...regForm, phone: e.target.value })
-                      }
-                      required
-                    />
-                    <input
-                      className="input is-small is-dark mb-2"
-                      placeholder="Email"
-                      type="email"
-                      value={regForm.email}
-                      onChange={(e) =>
-                        setRegForm({ ...regForm, email: e.target.value })
-                      }
-                      required
-                    />
-                    <input
-                      className="input is-small is-dark mb-3"
-                      placeholder="Age"
-                      type="number"
-                      value={regForm.age}
-                      onChange={(e) =>
-                        setRegForm({ ...regForm, age: e.target.value })
-                      }
-                    />
-                    <button
-                      type="submit"
-                      className={`button is-small is-primary is-fullwidth ${isRegistering ? "is-loading" : ""}`}
-                    >
-                      Create Account
-                    </button>
-                  </div>
-                </form>
               </div>
-              {/* QUICK WALK-IN */}
-              <div
-                className="box mb-4"
-                style={{ background: "#1a1a1a", border: "1px solid #ffdd57" }}
-              >
-                <h3 className="subtitle is-6 has-text-warning mb-3">
-                  ⚡ Quick Walk-In (15 mins)
-                </h3>
-                <div className="columns is-mobile">
-                  <div className="column">
-                    <button
-                      disabled={isUpdating}
-                      onClick={() => handleQuickSession(QUICK_CASH_PRICES[0])}
-                      className={`button is-small is-warning is-light is-fullwidth ${isUpdating ? "is-loading" : ""}`}
-                    >
-                      Rs. {QUICK_CASH_PRICES[0]}
-                    </button>
-                  </div>
-                  <div className="column">
-                    <button
-                      disabled={isUpdating}
-                      onClick={() => handleQuickSession(QUICK_CASH_PRICES[1])}
-                      className={`button is-small is-warning is-fullwidth ${isUpdating ? "is-loading" : ""}`}
-                    >
-                      Rs. {QUICK_CASH_PRICES[1]}
-                    </button>
-                  </div>
+              <form onSubmit={handleQuickRegister}>
+                <div className="ap-form-grid">
+                  <input
+                    className="input is-small ap-input is-full"
+                    placeholder="Name"
+                    value={regForm.name}
+                    onChange={(e) =>
+                      setRegForm({ ...regForm, name: e.target.value })
+                    }
+                    required
+                  />
+                  <input
+                    className="input is-small ap-input"
+                    placeholder="Phone"
+                    type="tel"
+                    value={regForm.phone}
+                    onChange={(e) =>
+                      setRegForm({ ...regForm, phone: e.target.value })
+                    }
+                    required
+                  />
+                  <input
+                    className="input is-small ap-input"
+                    placeholder="Age"
+                    type="number"
+                    value={regForm.age}
+                    onChange={(e) =>
+                      setRegForm({ ...regForm, age: e.target.value })
+                    }
+                  />
+                  <input
+                    className="input is-small ap-input is-full"
+                    placeholder="Email (optional)"
+                    type="email"
+                    value={regForm.email}
+                    onChange={(e) =>
+                      setRegForm({ ...regForm, email: e.target.value })
+                    }
+                  />
+                  <button
+                    type="submit"
+                    className={`button is-small is-primary is-fullwidth is-full has-text-weight-bold ${isRegistering ? "is-loading" : ""}`}
+                  >
+                    Create Account
+                  </button>
                 </div>
-                <p className="is-size-7 has-text-grey-light has-text-centered">
-                  Instant Cash + Receipt
-                </p>
-              </div>
-              {/* LIVE STATUS */}
-              <div
-                className="box mb-4"
-                style={{ background: "#1a1a1a", border: "1px solid #333" }}
-              >
-                <h3 className="subtitle is-6 has-text-white mb-3">
-                  Live Stations ({occupiedCount}/{TOTAL_CAPACITY})
+              </form>
+            </div>
+
+            {/* QUICK WALK-IN */}
+            <div className="ap-card" style={{ borderColor: "rgba(255, 221, 87, 0.4)" }}>
+              <div className="ap-card-head">
+                <h3 className="ap-card-title">
+                  <i className="fas fa-bolt" style={{ color: "var(--ap-warn)" }}></i>
+                  Quick Walk-In (15 mins)
                 </h3>
-                <div className="columns is-mobile is-multiline">
+                <span className="ap-hint">Instant Cash + Receipt</span>
+              </div>
+              <div className="ap-quick">
+                {QUICK_CASH_PRICES.map((price, i) => (
+                  <button
+                    key={i}
+                    disabled={isUpdating}
+                    onClick={() => handleQuickSession(price)}
+                    className={`button is-warning ${i === 0 ? "is-light" : ""} ${isUpdating ? "is-loading" : ""}`}
+                  >
+                    Rs. {price}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* LIVE STATUS */}
+            <div className="ap-card">
+              <div className="ap-card-head">
+                <h3 className="ap-card-title">
+                  <i className="fas fa-gamepad"></i>
+                  Live Stations
+                </h3>
+                <span className={`ap-chip ${occupiedCount > 0 ? "is-accent" : ""}`}>
+                  {occupiedCount}/{TOTAL_CAPACITY}
+                </span>
+              </div>
+              {activeSessions.length === 0 ? (
+                <div className="ap-empty">All stations are free</div>
+              ) : (
+                <div className="ap-live-list">
                   {activeSessions.map((s, i) => {
                     const key = `${s.machine}-${s.startTime}`;
                     const secsLeft =
                       sessionCountdowns[key] ??
                       Math.round((s.endTime.getTime() - Date.now()) / 1000);
-                    const minsLeft = Math.floor(secsLeft / 60);
-                    const secs = secsLeft % 60;
+                    const totalSecs = (parseFloat(s.duration) || 0) * 3600;
+                    const pct = totalSecs > 0 ? Math.min(100, Math.max(0, (secsLeft / totalSecs) * 100)) : 0;
                     const isUrgent = secsLeft <= 300;
                     return (
-                      <div key={i} className="column is-12-tablet is-12-mobile">
-                        <div
-                          className="p-2"
-                          style={{
-                            background: "#222",
-                            borderLeft: isUrgent
-                              ? "4px solid #ff3860"
-                              : "4px solid #00d1b2",
-                            borderRadius: "4px",
-                          }}
-                        >
-                          <p className="is-size-7 has-text-white is-truncated">
-                            <b>{s.machine}</b>: {s.name}
+                      <div key={i} className={`ap-live ${isUrgent ? "is-urgent" : ""}`}>
+                        <div className="ap-live-top">
+                          <p className="ap-live-name">
+                            <b>{s.machine}</b> <span>· {s.name}</span>
                           </p>
-                          <p
-                            className={`is-size-7 ${isUrgent ? "has-text-danger" : "has-text-warning"}`}
-                          >
-                            {minsLeft}:{String(secs).padStart(2, "0")} left
-                          </p>
+                          <span className="ap-live-time">{formatLeft(secsLeft)}</span>
+                        </div>
+                        <div className="ap-bar">
+                          <div style={{ width: `${pct}%` }}></div>
                         </div>
                       </div>
                     );
                   })}
                 </div>
-              </div>
-
-              {/* QR SCANNER */}
-              <div
-                className="box is-hidden-mobile"
-                style={{
-                  background: "#000",
-                  padding: "10px",
-                  border: "1px solid #333",
-                }}
-              >
-                <video
-                  ref={videoRef}
-                  style={{
-                    width: "100%",
-                    borderRadius: "10px",
-                    objectFit: "cover",
-                  }}
-                ></video>
-                <p className="is-size-7 has-text-grey has-text-centered mt-2">
-                  Scan Player QR Code
-                </p>
-              </div>
+              )}
             </div>
-          </div>
+
+            {/* QR SCANNER */}
+            <div className="ap-card">
+              <div className="ap-card-head">
+                <h3 className="ap-card-title">
+                  <i className="fas fa-qrcode"></i>
+                  Scan Player QR Code
+                </h3>
+                {cameraState === "on" && (
+                  <span className="ap-chip is-accent">
+                    <span className="ap-dot is-live"></span>Live
+                  </span>
+                )}
+              </div>
+              <div className="qr-frame">
+                <video ref={videoRef} muted playsInline></video>
+                {cameraState !== "on" && (
+                  <div className="qr-overlay">
+                    {cameraState === "starting" ? (
+                      <p className="is-size-7 has-text-grey-light">
+                        <i className="fas fa-circle-notch fa-spin mr-2"></i>Starting camera…
+                      </p>
+                    ) : (
+                      <>
+                        <p className="is-size-7 has-text-danger mb-2">{cameraError}</p>
+                        <button
+                          className="button is-small is-primary"
+                          onClick={() => setCameraAttempt((n) => n + 1)}
+                        >
+                          Retry Camera
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+              {scanNote && (
+                <p className="is-size-7 has-text-warning has-text-centered mt-2">{scanNote}</p>
+              )}
+            </div>
+          </aside>
 
           {/* MAIN PANEL: SEARCH & CONFIGURATOR */}
-          <div className="column is-12-tablet is-8-desktop">
+          <main className="ap-main">
             {/* SEARCH */}
-            <div className="box mb-4" style={{ background: "#1a1a1a" }}>
+            <div className="ap-card">
               <form
                 onSubmit={(e) => handlePhoneSearch(e, "primary")}
-                className="field has-addons"
+                className="ap-inline-form"
               >
-                <div className="control is-expanded">
-                  <input
-                    className="input is-dark"
-                    type="tel"
-                    placeholder="Search Player Phone..."
-                    value={searchPhone}
-                    onChange={(e) => setSearchPhone(e.target.value)}
-                  />
-                </div>
-                <div className="control">
-                  <button type="submit" className="button is-primary">
-                    Find
-                  </button>
-                </div>
+                <input
+                  className="input ap-input"
+                  type="tel"
+                  placeholder="Search Player Phone..."
+                  value={searchPhone}
+                  onChange={(e) => setSearchPhone(e.target.value)}
+                />
+                <button type="submit" className="button is-primary has-text-weight-bold">
+                  <span className="icon is-small"><i className="fas fa-magnifying-glass"></i></span>
+                  <span>Find</span>
+                </button>
               </form>
             </div>
 
@@ -773,272 +852,276 @@ const AdminPanel = () => {
               if (isMembershipActive) {
                 activeDiscountMultiplier = 0.50; // 50% member rate
                 discountLabel = "50% MEMBER OFF";
-              } else if (globalDiscount.bool && globalDiscount.percentage > 0) {
-                // Safely interpret fraction vs whole percentage integers (e.g., 20 vs 0.2)
-                const parsedRate = globalDiscount.percentage > 1 ? globalDiscount.percentage / 100 : globalDiscount.percentage;
-                activeDiscountMultiplier = 1 - parsedRate;
-                discountLabel = `${Math.round(parsedRate * 100)}% PROMO OFF`;
+              } else if (promoRate > 0) {
+                activeDiscountMultiplier = 1 - promoRate;
+                discountLabel = `${Math.round(promoRate * 100)}% PROMO OFF`;
               }
 
               const hasDiscountApplied = activeDiscountMultiplier < 1;
+              const bonusMins =
+                (!userData.isGuest && userData.rewardClaimed === false ? userData.bonusMinutes || 0 : 0) +
+                (friendData && friendData.rewardClaimed === false ? friendData.bonusMinutes || 0 : 0);
 
               return (
-                <div
-                  className="box"
-                  style={{ background: "#111", border: "1px solid #00d1b2" }}
-                >
-                  <div className="level is-mobile">
-                    <div className="level-left">
-                      <div>
-                        <h2 className="title is-5 has-text-white mb-0">
-                          Player: {userData.fullName}
-                        </h2>
+                <div className="ap-card is-accent">
+                  <div className="ap-player">
+                    <div className="ap-avatar">
+                      {(userData.fullName || "?").trim().charAt(0).toUpperCase()}
+                    </div>
+                    <div style={{ minWidth: 0 }}>
+                      <h2 className="ap-player-name">Player: {userData.fullName}</h2>
+                      <div className="ap-player-meta">
                         {userData.membershipExpiry && (
-                          <p className={`is-size-7 ${isMembershipActive ? 'has-text-grey-light' : 'has-text-danger'}`}>
+                          <span className={`ap-chip ${isMembershipActive ? "is-warn" : "is-danger"}`}>
                             {isMembershipActive ? "👑 Active Member Until: " : "❌ Membership Expired: "}
                             {new Date(userData.membershipExpiry).toLocaleDateString()}
-                          </p>
+                          </span>
+                        )}
+                        {userData.phone && <span className="ap-chip">{userData.phone}</span>}
+                        {bonusMins > 0 && (
+                          <span className="ap-chip is-accent">+{bonusMins}m bonus</span>
                         )}
                       </div>
                     </div>
-                    <div className="level-right">
-                      <button
-                        className="delete"
-                        onClick={() => {
-                          setUserData(null);
-                          setFriendData(null);
-                          setPartySize(1);
-                        }}
-                      ></button>
-                    </div>
+                    <button
+                      className="ap-close"
+                      aria-label="Close player"
+                      onClick={() => {
+                        setUserData(null);
+                        setFriendData(null);
+                        setPartySize(1);
+                      }}
+                    >
+                      <i className="fas fa-xmark"></i>
+                    </button>
                   </div>
 
                   {!friendData && (
                     <form
                       onSubmit={(e) => handlePhoneSearch(e, "friend")}
-                      className="field has-addons mt-2"
+                      className="ap-inline-form mt-4"
                     >
-                      <div className="control is-expanded">
-                        <input
-                          className="input is-small is-dark"
-                          placeholder="Add Friend Phone"
-                          value={friendPhone}
-                          onChange={(e) => setFriendPhone(e.target.value)}
-                        />
-                      </div>
-                      <div className="control">
-                        <button type="submit" className="button is-small is-info">
-                          Add
-                        </button>
-                      </div>
+                      <input
+                        className="input is-small ap-input"
+                        placeholder="Add Friend Phone"
+                        value={friendPhone}
+                        onChange={(e) => setFriendPhone(e.target.value)}
+                      />
+                      <button type="submit" className="button is-small is-info">
+                        <span className="icon is-small"><i className="fas fa-user-group"></i></span>
+                        <span>Add</span>
+                      </button>
                     </form>
                   )}
                   {friendData && (
-                    <p className="is-size-7 has-text-info mb-3">
-                      Linked: {friendData.fullName}
+                    <p className="mt-3">
+                      <span className="ap-chip is-info">
+                        <i className="fas fa-user-group"></i>
+                        Linked: {friendData.fullName}
+                      </span>
                     </p>
                   )}
 
                   <div className="columns is-multiline mt-2">
                     <div className="column is-12-mobile is-6-tablet">
-                      <label className="label is-small has-text-grey">
-                        STATION
-                      </label>
-                      <div className="columns is-mobile is-multiline">
-                        {MACHINES.map((m) => {
-                          const capacity = getStationCapacity(m);
-                          const isOccupied = activeSessions.some((s) => s.machine === m);
-                          const tooFewSlots = partySize > capacity;
-                          return (
-                            <div key={m} className="column is-6">
+                      <div className="ap-step">
+                        <div className="ap-step-label">Station</div>
+                        <div className="ap-tiles is-2">
+                          {MACHINES.map((m) => {
+                            const capacity = getStationCapacity(m);
+                            const isOccupied = activeSessions.some((s) => s.machine === m);
+                            const tooFewSlots = partySize > capacity;
+                            return (
                               <button
+                                key={m}
                                 disabled={isOccupied || tooFewSlots}
                                 title={tooFewSlots ? `${m} only allows ${capacity} ${capacity === 1 ? "person" : "people"}` : ""}
-                                className={`button is-small is-fullwidth ${selectedMachine === m ? "is-primary" : "is-dark"}`}
+                                className={`ap-tile ${selectedMachine === m ? "is-selected" : ""} ${isOccupied ? "is-busy" : ""}`}
                                 onClick={() => setSelectedMachine(m)}
                               >
-                                {m} <span className="has-text-grey-light ml-1">({capacity} slot{capacity > 1 ? "s" : ""})</span>
+                                <span className="ap-tile-main">{m}</span>
+                                <span className="ap-tile-sub">
+                                  {isOccupied ? "In use" : `${capacity} slot${capacity > 1 ? "s" : ""}`}
+                                </span>
                               </button>
-                            </div>
-                          );
-                        })}
+                            );
+                          })}
+                        </div>
                       </div>
 
-                      <div className="field mt-3">
-                        <label className="label is-small has-text-grey">PARTY SIZE</label>
-                        <div className="columns is-mobile">
-                          <div className="column">
-                            <button
-                              className={`button is-small is-fullwidth ${partySize === 1 ? "is-primary" : "is-dark"}`}
-                              onClick={() => setPartySize(1)}
-                            >
-                              SOLO - Rs. {getStationRate(1)}/hr
-                            </button>
-                          </div>
-                          <div className="column">
-                            <button
-                              disabled={!selectedMachine ? false : getStationCapacity(selectedMachine) < 2}
-                              title={selectedMachine && getStationCapacity(selectedMachine) < 2 ? `${selectedMachine} only allows 1 person` : ""}
-                              className={`button is-small is-fullwidth ${partySize === 2 ? "is-primary" : "is-dark"}`}
-                              onClick={() => setPartySize(2)}
-                            >
-                              DOUBLE - Rs. {getStationRate(2)}/hr
-                            </button>
-                          </div>
+                      <div className="ap-step">
+                        <div className="ap-step-label">Party Size</div>
+                        <div className="ap-tiles is-2">
+                          <button
+                            className={`ap-tile ${partySize === 1 ? "is-selected" : ""}`}
+                            onClick={() => setPartySize(1)}
+                          >
+                            <span className="ap-tile-main">SOLO</span>
+                            <span className="ap-tile-sub">Rs. {getStationRate(1, rates)}/hr</span>
+                          </button>
+                          <button
+                            disabled={!selectedMachine ? false : getStationCapacity(selectedMachine) < 2}
+                            title={selectedMachine && getStationCapacity(selectedMachine) < 2 ? `${selectedMachine} only allows 1 person` : ""}
+                            className={`ap-tile ${partySize === 2 ? "is-selected" : ""}`}
+                            onClick={() => setPartySize(2)}
+                          >
+                            <span className="ap-tile-main">DOUBLE</span>
+                            <span className="ap-tile-sub">Rs. {getStationRate(2, rates)}/hr</span>
+                          </button>
                         </div>
                       </div>
                     </div>
+
                     <div className="column is-12-mobile is-6-tablet">
-                      <label className="label is-small has-text-grey">
-                        TIME / RACE {hasDiscountApplied && <span className="tag is-danger is-pulled-right">{discountLabel}</span>}
-                      </label>
-                      {!selectedMachine ? (
-                        <p className="is-size-7 has-text-grey">Pick a station first.</p>
-                      ) : (
-                      <div className="columns is-mobile is-multiline">
-                        {/* Standard Pricing Buttons (30m is a flat tier, 1h/2h scale off the hourly rate) */}
-                        {[0.5, 1, 2].map((h) => {
-                          const basePrice = getStationPrice(partySize, h);
-                          const discountedPrice = Math.round(basePrice * activeDiscountMultiplier);
-
-                          return (
-                            <div key={h} className="column is-6">
-                              <button
-                                className={`button is-small is-fullwidth ${pendingTransaction?.hours === h && !pendingTransaction.isCustom ? "is-info" : "is-dark"}`}
-                                onClick={() =>
-                                  setPendingTransaction({
-                                    hours: h,
-                                    price: discountedPrice,
-                                    isSingleRace: false,
-                                    isCustom: false,
-                                    originalPrice: basePrice
-                                  })
-                                }
-                              >
-                                {h === 0.5 ? "30m" : `${h}h`} - Rs. {discountedPrice}
-                              </button>
-                            </div>
-                          );
-                        })}
-
-                        {/* Custom Hourly Billing Button */}
-                        <div className="column is-12">
-                          <button
-                            className={`button is-small is-fullwidth is-dashed ${pendingTransaction?.isCustom ? "is-primary" : "is-dark"}`}
-                            style={{ border: "1px dashed #00d1b2" }}
-                            onClick={() => {
-                              const h = parseFloat(prompt("Enter total hours:", "5"));
-                              if (!h || isNaN(h)) return;
-
-                              const basePrice = getStationRate(partySize) * h;
-                              const finalPrice = Math.round(basePrice * activeDiscountMultiplier);
-
-                              setPendingTransaction({
-                                hours: h,
-                                price: finalPrice,
-                                isSingleRace: false,
-                                isCustom: true,
-                                originalPrice: basePrice
-                              });
-                            }}
-                          >
-                            ➕ Custom Duration {hasDiscountApplied ? `(${discountLabel})` : `(Rs.${getStationRate(partySize)}/hr)`}
-                          </button>
+                      <div className="ap-step">
+                        <div className="ap-step-label">
+                          Time / Race
+                          {hasDiscountApplied && <span className="ap-chip is-danger">{discountLabel}</span>}
                         </div>
+                        {!selectedMachine ? (
+                          <div className="ap-empty">Pick a station first.</div>
+                        ) : (
+                          <div className="ap-tiles is-2">
+                            {/* Standard Pricing Buttons (30m is a flat tier, 1h/2h scale off the hourly rate) */}
+                            {[0.5, 1, 2].map((h) => {
+                              const basePrice = getStationPrice(partySize, h, rates);
+                              const discountedPrice = Math.round(basePrice * activeDiscountMultiplier);
 
-                        {/* Single Race Button */}
-                        <div className="column is-12">
-                          <button
-                            className={`button is-small is-fullwidth ${pendingTransaction?.isSingleRace ? "is-warning" : "is-dark"}`}
-                            onClick={() => {
-                              const basePrice = SINGLE_RACE_PRICE;
-                              const finalPrice = Math.round(basePrice * activeDiscountMultiplier);
-                              setPendingTransaction({
-                                hours: 0.1,
-                                price: finalPrice,
-                                isSingleRace: true,
-                                isCustom: false,
-                                originalPrice: basePrice
-                              });
-                            }}
-                          >
-                            🏎️ SINGLE RACE - Rs. {Math.round(SINGLE_RACE_PRICE * activeDiscountMultiplier)}
-                          </button>
-                        </div>
+                              return (
+                                <button
+                                  key={h}
+                                  className={`ap-tile ${pendingTransaction?.hours === h && !pendingTransaction.isCustom && !pendingTransaction.isSingleRace ? "is-selected" : ""}`}
+                                  onClick={() =>
+                                    setPendingTransaction({
+                                      hours: h,
+                                      price: discountedPrice,
+                                      isSingleRace: false,
+                                      isCustom: false,
+                                      originalPrice: basePrice
+                                    })
+                                  }
+                                >
+                                  <span className="ap-tile-sub">{h === 0.5 ? "30m" : `${h}h`}</span>
+                                  <span className="ap-tile-price">
+                                    Rs. {discountedPrice}
+                                    {hasDiscountApplied && <s>{basePrice}</s>}
+                                  </span>
+                                </button>
+                              );
+                            })}
+
+                            {/* Custom Hourly Billing Button */}
+                            <button
+                              className={`ap-tile is-dashed ${pendingTransaction?.isCustom ? "is-selected" : ""}`}
+                              onClick={() => {
+                                const h = parseFloat(prompt("Enter total hours:", "5"));
+                                if (!h || isNaN(h)) return;
+
+                                const basePrice = getStationRate(partySize, rates) * h;
+                                const finalPrice = Math.round(basePrice * activeDiscountMultiplier);
+
+                                setPendingTransaction({
+                                  hours: h,
+                                  price: finalPrice,
+                                  isSingleRace: false,
+                                  isCustom: true,
+                                  originalPrice: basePrice
+                                });
+                              }}
+                            >
+                              <span className="ap-tile-sub">➕ Custom Duration</span>
+                              <span className="ap-tile-price" style={{ fontSize: "0.8rem" }}>
+                                {pendingTransaction?.isCustom
+                                  ? `${pendingTransaction.hours}h - Rs. ${pendingTransaction.price}`
+                                  : `Rs.${getStationRate(partySize, rates)}/hr`}
+                              </span>
+                            </button>
+
+                            {/* Single Race Button */}
+                            <button
+                              className={`ap-tile is-warn ${pendingTransaction?.isSingleRace ? "is-selected" : ""}`}
+                              style={{ gridColumn: "1 / -1" }}
+                              onClick={() => {
+                                const basePrice = rates.singleRace;
+                                const finalPrice = Math.round(basePrice * activeDiscountMultiplier);
+                                setPendingTransaction({
+                                  hours: 0.1,
+                                  price: finalPrice,
+                                  isSingleRace: true,
+                                  isCustom: false,
+                                  originalPrice: basePrice
+                                });
+                              }}
+                            >
+                              <span className="ap-tile-sub">🏎️ SINGLE RACE</span>
+                              <span className="ap-tile-price">
+                                Rs. {Math.round(rates.singleRace * activeDiscountMultiplier)}
+                                {hasDiscountApplied && <s>{rates.singleRace}</s>}
+                              </span>
+                            </button>
+                          </div>
+                        )}
                       </div>
-                      )}
                     </div>
                   </div>
 
                   {pendingTransaction && (
-                    <div
-                      className="notification mt-4 is-dark"
-                      style={{
-                        border: hasDiscountApplied ? "1px solid #ff3860" : "1px solid #00d1b2",
-                        background: "#161616",
-                      }}
-                    >
-                      <div className="level is-mobile mb-3">
-                        <div className="level-left">
-                          <div>
-                            <p className="is-size-7 has-text-grey heading mb-1">
-                              Total Amount {hasDiscountApplied && `(${discountLabel})`}
+                    <div className={`ap-summary ${hasDiscountApplied ? "is-discount" : ""}`}>
+                      <div className="ap-summary-top">
+                        <div>
+                          <p className="ap-total-label">
+                            Total Amount {hasDiscountApplied && `(${discountLabel})`}
+                          </p>
+                          <p className="ap-total">Rs. {pendingTransaction.price}</p>
+                          {hasDiscountApplied && (
+                            <p className="ap-total-was">
+                              <s>Rs. {pendingTransaction.originalPrice}</s> ({discountLabel} Applied)
                             </p>
-                            <p className="title is-4 has-text-white mb-0">
-                              Rs. {pendingTransaction.price}
-                            </p>
-                            {hasDiscountApplied && (
-                              <p className="is-size-7 has-text-danger" style={{ fontWeight: 'bold' }}>
-                                <s>Rs. {pendingTransaction.originalPrice}</s> ({discountLabel} Applied)
-                              </p>
-                            )}
-                          </div>
+                          )}
                         </div>
-                        <div className="level-right">
-                          <span className={`tag ${hasDiscountApplied ? 'is-danger' : 'is-primary'} is-light`}>
-                            {selectedMachine}
+                        <div className="ap-summary-meta">
+                          <span className="ap-chip is-accent">{selectedMachine}</span>
+                          <span className="ap-chip">
+                            {pendingTransaction.isSingleRace
+                              ? "Single race"
+                              : pendingTransaction.hours === 0.5 ? "30m" : `${pendingTransaction.hours}h`}
                           </span>
+                          <span className="ap-chip">{partySize === 2 ? "Double" : "Solo"}</span>
                         </div>
                       </div>
 
-                      <div className="field">
-                        <label className="label is-size-7 has-text-grey">LAP TIME / NOTES (OPTIONAL)</label>
-                        <div className="control">
-                          <input
-                            className="input is-small is-dark mb-3"
-                            placeholder="e.g. 1:24.432"
-                            value={lapTime}
-                            onChange={(e) => setLapTime(e.target.value)}
-                          />
-                        </div>
-                      </div>
+                      <label className="ap-step-label" style={{ marginBottom: "0.35rem" }}>
+                        Lap Time / Notes (optional)
+                      </label>
+                      <input
+                        className="input is-small ap-input"
+                        placeholder="e.g. 1:24.432"
+                        value={lapTime}
+                        onChange={(e) => setLapTime(e.target.value)}
+                      />
 
-                      <div className="columns is-mobile">
-                        <div className="column">
-                          <button
-                            disabled={!selectedMachine || isUpdating}
-                            className={`button is-success is-fullwidth ${isUpdating ? "is-loading" : ""}`}
-                            onClick={() => confirmPayment("CASH")}
-                          >
-                            <span className="icon is-small"><i className="fas fa-money-bill-wave"></i></span>
-                            <span>CASH</span>
-                          </button>
-                        </div>
-                        <div className="column">
-                          <button
-                            disabled={!selectedMachine || isUpdating}
-                            className={`button is-info is-fullwidth ${isUpdating ? "is-loading" : ""}`}
-                            onClick={() => confirmPayment("CARD")}
-                          >
-                            <span className="icon is-small"><i className="fas fa-credit-card"></i></span>
-                            <span>CARD</span>
-                          </button>
-                        </div>
+                      <div className="ap-pay">
+                        <button
+                          disabled={!selectedMachine || isUpdating}
+                          className={`button is-success ${isUpdating ? "is-loading" : ""}`}
+                          onClick={() => confirmPayment("CASH")}
+                        >
+                          <span className="icon is-small"><i className="fas fa-money-bill-wave"></i></span>
+                          <span>CASH</span>
+                        </button>
+                        <button
+                          disabled={!selectedMachine || isUpdating}
+                          className={`button is-info ${isUpdating ? "is-loading" : ""}`}
+                          onClick={() => confirmPayment("CARD")}
+                        >
+                          <span className="icon is-small"><i className="fas fa-credit-card"></i></span>
+                          <span>CARD</span>
+                        </button>
                       </div>
 
                       {isMembershipActive && (
-                        <p className="help has-text-centered has-text-grey-light mt-2">
-                          Member discount is linked to: <b>{userData.fullName}</b>
+                        <p className="ap-hint has-text-centered mt-3">
+                          Member discount is linked to: <b className="has-text-white">{userData.fullName}</b>
                         </p>
                       )}
                     </div>
@@ -1048,139 +1131,95 @@ const AdminPanel = () => {
             })()}
 
             {/* ── TRANSACTIONS HISTORY ── */}
-            <div style={{ marginTop: "2rem" }}>
+            <div className="ap-card">
               <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  cursor: "pointer",
-                  marginBottom: "1rem",
-                }}
+                className="ap-card-head"
+                style={{ cursor: "pointer", marginBottom: txnPanelOpen ? undefined : 0 }}
                 onClick={() => setTxnPanelOpen(!txnPanelOpen)}
               >
-                <h2 className="title is-5 has-text-white">
-                  💳 Revenue History
+                <h2 className="ap-card-title">
+                  <i className="fas fa-receipt"></i>
+                  Revenue History
                 </h2>
-                <span style={{ color: "#666" }}>
-                  {txnPanelOpen ? "▲" : "▼"}
-                </span>
+                <i className={`fas fa-chevron-${txnPanelOpen ? "up" : "down"}`} style={{ color: "var(--ap-muted)" }}></i>
               </div>
 
               {txnPanelOpen && (
                 <>
-                  <div className="buttons mb-4">
-                    {["today", "week", "month", "all"].map((f) => (
+                  <div className="ap-seg">
+                    {["today", "week", "month", "last30", "all"].map((f) => (
                       <button
                         key={f}
                         onClick={() => setTxnFilter(f)}
-                        className={`button is-small is-rounded ${txnFilter === f ? "is-primary" : "is-dark"}`}
+                        className={txnFilter === f ? "is-active" : ""}
                       >
-                        {f}
+                        {PERIOD_LABELS[f]}
                       </button>
                     ))}
                   </div>
 
-                  <div
-                    style={{
-                      background:
-                        "linear-gradient(135deg, #00d1b2 0%, #006b5a 100%)",
-                      borderRadius: "12px",
-                      padding: "1.25rem",
-                      marginBottom: "1rem",
-                    }}
-                  >
-                    <p
-                      style={{
-                        color: "white",
-                        fontSize: "0.7rem",
-                        fontWeight: 700,
-                        textTransform: "uppercase",
-                        letterSpacing: "1px",
-                      }}
-                    >
-                      Total Revenue ({txnFilter})
+                  <div className="ap-stat is-hero" style={{ margin: "0.85rem 0" }}>
+                    <p className="ap-stat-label">
+                      Total Revenue ({PERIOD_LABELS[txnFilter]})
                     </p>
-                    <h2
-                      style={{
-                        color: "white",
-                        fontSize: "1.75rem",
-                        fontWeight: 800,
-                      }}
-                    >
-                      Rs. {totalRevenue.toLocaleString()}
-                    </h2>
+                    <p className="ap-stat-value">Rs. {totalRevenue.toLocaleString()}</p>
                   </div>
 
-                  <div
-                    className="box"
-                    style={{
-                      background: "#1a1a1a",
-                      padding: "0",
-                      border: "1px solid #333",
-                      overflow: "hidden",
-                    }}
-                  >
-                    <div style={{ overflowX: "auto" }}>
-                      <table
-                        className="table is-fullwidth is-dark"
-                        style={{ background: "transparent", minWidth: "500px" }}
-                      >
-                        <thead>
+                  <div className="ap-table-wrap">
+                    <table className="ap-table">
+                      <thead>
+                        <tr>
+                          <th>Player</th>
+                          <th>Station</th>
+                          <th>Time</th>
+                          <th>Method</th>
+                          <th className="is-right">Amount</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredData.length === 0 && (
                           <tr>
-                            <th>Player</th>
-                            <th>Station</th>
-                            <th>Time</th>
-                            <th>Method</th>
-                            <th className="has-text-right">Amount</th>
+                            <td colSpan={5} className="has-text-centered ap-hint" style={{ padding: "1.5rem" }}>
+                              No transactions for this period.
+                            </td>
                           </tr>
-                        </thead>
-                        <tbody>
-                          {filteredData.map((t, i) => (
-                            <tr
-                              key={i}
-                              style={{ borderBottom: "1px solid #222" }}
-                            >
-                              <td className="is-size-7">
-                                <span className="has-text-weight-bold">
-                                  {t.players || t.userName}
+                        )}
+                        {filteredData.map((t, i) => (
+                          <tr key={i}>
+                            <td>
+                              <span className="has-text-weight-bold has-text-white">
+                                {t.players || t.userName}
+                              </span>
+                              <br />
+                              <span className="ap-when">
+                                {new Date(t.startTime).toLocaleDateString()} ·{" "}
+                                {new Date(t.startTime).toLocaleTimeString(
+                                  [],
+                                  { hour: "2-digit", minute: "2-digit" },
+                                )}
+                              </span>
+                            </td>
+                            <td>{t.machine}</td>
+                            <td>{t.isSingleRace ? "Race" : t.duration != null ? `${t.duration}h` : "—"}</td>
+                            <td>
+                              {t.method && (
+                                <span className={`ap-chip ${t.method === "CASH" ? "is-accent" : t.method === "CARD" ? "is-info" : ""}`}>
+                                  {t.method}
                                 </span>
-                                <br />
-                                <span
-                                  className="has-text-grey"
-                                  style={{ fontSize: "0.65rem" }}
-                                >
-                                  {new Date(t.startTime).toLocaleDateString()} |{" "}
-                                  {new Date(t.startTime).toLocaleTimeString(
-                                    [],
-                                    { hour: "2-digit", minute: "2-digit" },
-                                  )}
-                                </span>
-                              </td>
-                              <td className="is-size-7">{t.machine}</td>
-                              <td className="is-size-7">
-                                {t.isSingleRace ? "Race" : `${t.duration}h`}
-                              </td>
-                              <td className="is-size-7">{t.method}</td>
-                              <td className="has-text-right has-text-weight-bold">
-                                Rs. {t.amountPaid}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
+                              )}
+                            </td>
+                            <td className="is-right ap-amount">Rs. {t.amountPaid}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                 </>
               )}
             </div>
-          </div>
+          </main>
         </div>
       </div>
-
-      <style>{`
-        .is-truncated { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        @media print { body * { visibility: hidden; } #receipt-print { display: block !important; visibility: visible; position: absolute; left: 0; top: 0; } #receipt-print * { visibility: visible; } }
-      `}</style>
     </div>
   );
 };

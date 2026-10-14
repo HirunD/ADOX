@@ -1,3 +1,7 @@
+:root {
+    --nav-height: 65px;
+}
+
 /* Container for the preloader */
 .preloader {
     position: fixed;
@@ -42,10 +46,37 @@ html, body {
     margin: 0;
     padding: 0;
     color: white;
+    overflow-x: clip; /* no sideways page wobble on phones */
 }
 
-/* Ensure the root div also stays black */
+/* Ensure the root div also stays black, and clear the fixed navbar */
 #root {
     background-color: #050505;
     min-height: 100vh;
+    padding-top: var(--nav-height);
 }
+
+/* Full-height pages should fill the space under the navbar, not overflow it */
+.hero.is-fullheight {
+    min-height: calc(100vh - var(--nav-height));
+}
+
+/* Bulma buttons never wrap, so long labels ("Double — Rs. 500/hr") spill
+   out of narrow columns on phones. Opt-in class lets them wrap instead. */
+.button.is-wrap {
+    white-space: normal;
+    height: auto;
+    min-height: 2.5em;
+    line-height: 1.2;
+}
+.button.is-small.is-wrap {
+    min-height: 2.25em;
+}
+
+/* Tags are nowrap too; this lets long tag text wrap on small screens */
+.tag.is-wrap {
+    white-space: normal;
+    height: auto;
+    text-align: center;
+}
+

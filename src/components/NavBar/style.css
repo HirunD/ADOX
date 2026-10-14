@@ -3,23 +3,27 @@
     backdrop-filter: blur(15px) !important;
     -webkit-backdrop-filter: blur(15px);
     border-bottom: 1px solid rgba(255, 255, 255, 0.05); /* Very subtle edge */
-    height: 65px;
+    height: var(--nav-height);
+    min-height: var(--nav-height);
     display: flex;
     align-items: center;
 }
 
 /* Ensures no white backgrounds or weird borders from Bulma */
-.navbar, .navbar-brand {
+.glass-nav,
+.glass-nav .navbar-brand {
     background: transparent !important;
 }
 
-.navbar-item img {
+.glass-nav .navbar-item img {
     max-height: 40px !important;
 }
 
+/* Scoped to the navbar only — a bare `.container` rule here used to turn
+   every Bulma container on the site into a flex row below 1024px. */
 @media screen and (max-width: 1023px) {
-    .container {
+    .glass-nav .container {
         display: flex;
-        padding-left: 1rem; /* Padding for mobile screens */
+        padding-left: 1rem;
     }
 }

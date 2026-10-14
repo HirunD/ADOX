@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { db } from "../../firebase";
 import { collection, onSnapshot, query, orderBy } from "firebase/firestore";
+import { DEFAULT_PASSWORD } from "../../config/defaultPassword";
+import { PERIOD_LABELS, getPeriodRange, isInRange } from "../../config/periods";
 
 const PlayersList = () => {
   const [isAdmin, setIsAdmin] = useState(false);
@@ -29,25 +31,13 @@ const PlayersList = () => {
 
   // --- LOGIC: FILTER BY SIGN-UP DATE ---
   const getFilteredPlayers = () => {
-    const now = new Date();
-    let startLimit = new Date(0);
-    let endLimit = new Date(now.getTime() + 86400000);
-
-    if (range === "today") startLimit = new Date(now.setHours(0, 0, 0, 0));
-    else if (range === "week") startLimit = new Date(now.setDate(now.getDate() - 7));
-    else if (range === "month") startLimit = new Date(now.setMonth(now.getMonth() - 1));
-    else if (range === "custom" && startDate && endDate) {
-      startLimit = new Date(startDate);
-      startLimit.setHours(0, 0, 0, 0);
-      endLimit = new Date(endDate);
-      endLimit.setHours(23, 59, 59, 999);
-    }
+    const dateRange = getPeriodRange(range, { startDate, endDate });
 
     return players
       .filter(p => {
         // 1. Check the Joined Date (createdAt)
         const joinedDate = new Date(p.createdAt || p.signupDate);
-        const matchesRange = range === "lifetime" ? true : (joinedDate >= startLimit && joinedDate <= endLimit);
+        const matchesRange = range === "lifetime" ? true : isInRange(joinedDate, dateRange);
         
         // 2. Search match
         const matchesSearch = p.fullName?.toLowerCase().includes(searchTerm.toLowerCase()) || p.phone?.includes(searchTerm);
@@ -57,14 +47,32 @@ const PlayersList = () => {
       .map(p => ({
         ...p,
         // Calculate sessions within the same range for the table display
-        filteredSessions: (p.sessions || []).filter(s => {
-            const sTime = new Date(s.startTime);
-            return sTime >= startLimit && sTime <= endLimit;
-        })
+        filteredSessions: (p.sessions || []).filter(s => isInRange(s.startTime, dateRange))
       }));
   };
 
   const filteredPlayers = getFilteredPlayers();
+
+  const [resettingId, setResettingId] = useState(null);
+
+  const resetPassword = async (player) => {
+    if (!window.confirm(`Reset ${player.fullName}'s password to "${DEFAULT_PASSWORD}"?\nThey'll be asked to set a new one when they next log in.`)) return;
+    setResettingId(player.id);
+    try {
+      const res = await fetch("/.netlify/functions/reset-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uid: player.id, adminKey: password }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Reset failed");
+      alert(`Password reset to "${DEFAULT_PASSWORD}"`);
+    } catch (err) {
+      alert("Error: " + err.message);
+    } finally {
+      setResettingId(null);
+    }
+  };
 
   const exportAllPlayersToCSV = () => {
     if (filteredPlayers.length === 0) return alert("No players in this range to export");
@@ -111,8 +119,8 @@ const PlayersList = () => {
   };
 
   if (!isAdmin) return (
-    <div style={{ background: "#050505", minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <form className="box" style={{ width: "380px", background: "#1a1a1a", border: "1px solid #333" }} 
+    <div style={{ background: "#050505", minHeight: "calc(100vh - var(--nav-height))", display: "flex", alignItems: "center", justifyContent: "center", padding: "20px" }}>
+        <form className="box" style={{ width: "100%", maxWidth: "380px", background: "#1a1a1a", border: "1px solid #333" }}
           onSubmit={(e) => {
             e.preventDefault(); 
             if (password === import.meta.env.VITE_ADMIN_PASSWORD) setIsAdmin(true);
@@ -126,7 +134,7 @@ const PlayersList = () => {
   );
 
   return (
-    <div className="section" style={{ background: "#050505", minHeight: "100vh" }}>
+    <div className="section px-4" style={{ background: "#050505", minHeight: "100vh" }}>
       <div className="container">
         
         <div className="level mb-5">
@@ -134,14 +142,14 @@ const PlayersList = () => {
             <div>
               <h1 className="title has-text-white mb-1">New Sign-ups</h1>
               <p className="is-size-7 has-text-primary">
-                Showing {filteredPlayers.length} users who joined during: <strong>{range.toUpperCase()}</strong>
+                Showing {filteredPlayers.length} users who joined during: <strong>{(PERIOD_LABELS[range === "lifetime" ? "all" : range]).toUpperCase()}</strong>
               </p>
             </div>
           </div>
           <div className="level-right">
             <div className="field is-grouped is-grouped-multiline">
               {range === "custom" && (
-                <div className="control is-flex" style={{ gap: '5px' }}>
+                <div className="control is-flex is-flex-wrap-wrap" style={{ gap: '5px' }}>
                   <input className="input is-small is-dark" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
                   <input className="input is-small is-dark" type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
                 </div>
@@ -152,7 +160,8 @@ const PlayersList = () => {
                     <option value="lifetime">All Time (Lifetime)</option>
                     <option value="today">Joined Today</option>
                     <option value="week">Joined Last 7 Days</option>
-                    <option value="month">Joined Last 30 Days</option>
+                    <option value="month">Joined This Month</option>
+                    <option value="last30">Joined Last 30 Days</option>
                     <option value="custom">Custom Range</option>
                   </select>
                 </div>
@@ -175,7 +184,7 @@ const PlayersList = () => {
 
         <div className="box" style={{ background: "#1a1a1a", padding: "0", border: "1px solid #333", overflow: "hidden" }}>
           <div style={{ overflowX: "auto" }}>
-            <table className="table is-fullwidth is-dark" style={{ background: "transparent" }}>
+            <table className="table is-fullwidth is-dark" style={{ background: "transparent", minWidth: "600px" }}>
               <thead>
                 <tr style={{ borderBottom: "1px solid #333" }}>
                   <th>Joined Date</th>
@@ -183,11 +192,12 @@ const PlayersList = () => {
                   <th>Phone</th>
                   <th className="has-text-right">Visits in Period</th>
                   <th className="has-text-right">Total Lifetime Playtime</th>
+                  <th className="has-text-right">Password</th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan="5" className="has-text-centered p-6">Loading...</td></tr>
+                  <tr><td colSpan="6" className="has-text-centered p-6">Loading...</td></tr>
                 ) : filteredPlayers.length > 0 ? (
                   filteredPlayers.map((player) => (
                     <tr key={player.id} style={{ borderBottom: "1px solid #222" }}>
@@ -196,10 +206,10 @@ const PlayersList = () => {
                       </td>
                       <td>
                         <div className="is-flex is-align-items-center" style={{ gap: "10px" }}>
-                          <div style={{ width: "24px", height: "24px", borderRadius: "50%", background: "#333", overflow: "hidden" }}>
-                            <img src={player.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${player.id}`} alt="avatar" />
+                          <div style={{ width: "24px", height: "24px", borderRadius: "50%", background: "#333", overflow: "hidden", flexShrink: 0 }}>
+                            <img src={`/avatars/${player.avatar || "1.png"}`} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                           </div>
-                          <span className="has-text-weight-bold is-size-7">{player.fullName}</span>
+                          <span className="has-text-weight-bold is-size-7" style={{ whiteSpace: "nowrap" }}>{player.fullName}</span>
                         </div>
                       </td>
                       <td className="is-size-7">{player.phone || "N/A"}</td>
@@ -209,10 +219,21 @@ const PlayersList = () => {
                       <td className="has-text-right is-size-7 has-text-weight-bold">
                         {(player.sessions || []).reduce((acc, s) => acc + (parseFloat(s.duration) || 0), 0).toFixed(1)}h
                       </td>
+                      <td className="has-text-right">
+                        {player.id !== "guest_walkin" && (
+                          <button
+                            className={`button is-small is-warning is-outlined ${resettingId === player.id ? "is-loading" : ""}`}
+                            onClick={() => resetPassword(player)}
+                            disabled={resettingId !== null}
+                          >
+                            Reset
+                          </button>
+                        )}
+                      </td>
                     </tr>
                   ))
                 ) : (
-                  <tr><td colSpan="5" className="has-text-centered p-6 has-text-grey">No new users joined during this period.</td></tr>
+                  <tr><td colSpan="6" className="has-text-centered p-6 has-text-grey">No new users joined during this period.</td></tr>
                 )}
               </tbody>
             </table>

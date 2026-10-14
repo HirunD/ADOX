@@ -11,13 +11,15 @@ const ProfileBlast = () => {
   const [glitch, setGlitch] = useState(false);
 
   useEffect(() => {
+    let unsubData = () => {};
     const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
+      unsubData();
+      unsubData = () => {};
       if (user) {
-        const unsubData = onSnapshot(doc(db, "users", user.uid), (snap) => {
+        unsubData = onSnapshot(doc(db, "users", user.uid), (snap) => {
           if (snap.exists()) setUserData(snap.data());
           setLoading(false);
         });
-        return () => unsubData();
       } else {
         setLoading(false);
       }
@@ -29,18 +31,25 @@ const ProfileBlast = () => {
       setTimeout(() => setGlitch(false), 200);
     }, 4000);
 
-    return () => { unsubscribeAuth(); clearInterval(interval); };
+    return () => { unsubscribeAuth(); unsubData(); clearInterval(interval); };
   }, []);
 
-  if (loading) return <div style={{ background: "#000", height: "100vh" }} />;
+  if (loading) return <div style={{ background: "#000", minHeight: "calc(100vh - var(--nav-height))" }} />;
 
   return (
     <div className={`blast-viewport ${glitch ? 'glitch-active' : ''}`}>
       <style>{`
         .blast-viewport { 
-          background: #000; height: 100vh; width: 100vw; overflow: hidden; 
-          display: flex; align-items: center; justify-content: center; 
+          background: #000; min-height: calc(100vh - var(--nav-height)); width: 100%; overflow: hidden;
+          display: flex; align-items: center; justify-content: center; padding: 32px 0;
           position: relative; perspective: 1200px; font-family: 'Inter', sans-serif;
+        }
+        .blast-name { overflow-wrap: anywhere; }
+        .blast-cta { padding: 0 50px !important; letter-spacing: 5px; }
+        @media (max-width: 400px) {
+          .blast-card { padding: 48px 18px 32px !important; border-radius: 32px !important; }
+          .blast-name { font-size: 2.25rem !important; letter-spacing: 2px !important; }
+          .blast-cta { padding: 0 28px !important; letter-spacing: 3px; font-size: 1.1rem !important; }
         }
 
         /* The Cyber Grid */
@@ -115,6 +124,7 @@ const ProfileBlast = () => {
           style={{ zIndex: 10, width: '90%', maxWidth: '420px' }}
         >
           <motion.div
+            className="blast-card"
             style={{
               background: "rgba(10, 10, 10, 0.85)",
               border: userData?.isMember ? "4px solid #d4af37" : "2px solid #00d1b2",
@@ -149,6 +159,7 @@ const ProfileBlast = () => {
               <motion.img
                 whileHover={{ scale: 1.1 }}
                 src={userData?.avatar ? `/avatars/${userData.avatar}` : "/avatars/1.png"}
+                alt="Avatar"
                 style={{
                   width: "140px", height: "140px", borderRadius: "50%",
                   border: userData?.isMember ? "5px solid #d4af37" : "4px solid #00d1b2",
@@ -160,7 +171,7 @@ const ProfileBlast = () => {
 
             <div className="mt-4">
               <motion.div 
-                className={`title is-1 mb-2 ${glitch ? 'chromatic' : ''}`}
+                className={`title is-1 mb-2 blast-name ${glitch ? 'chromatic' : ''}`}
                 style={{ color: '#fff', letterSpacing: '4px', fontWeight: '950' }}
               >
                 {userData?.fullName?.split(' ')[0] || "GUEST"}
@@ -209,15 +220,13 @@ const ProfileBlast = () => {
           >
             <Link 
               to="/" 
-              className="button is-rounded is-large"
+              className="button is-rounded is-large blast-cta"
               style={{
                 background: 'transparent',
                 border: '2px solid #00d1b2',
                 color: '#00d1b2',
-                padding: '0 50px',
                 fontWeight: '900',
                 textTransform: 'uppercase',
-                letterSpacing: '5px',
                 boxShadow: '0 0 20px rgba(0, 209, 178, 0.3)'
               }}
             >
